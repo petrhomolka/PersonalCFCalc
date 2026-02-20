@@ -1,5 +1,5 @@
 const STORAGE_KEY = "pf_app_v1";
-const APP_VERSION = "v1.0.2";
+const APP_VERSION = "v1.0.3";
 const HISTORICAL_IMPORT_VERSION = 3;
 const DEFAULT_MAIN_CURRENCY = "CZK";
 const MAJOR_CRYPTO_CURRENCIES = [
@@ -139,6 +139,7 @@ const els = {
   incomeChart: document.getElementById("incomeChart"),
   exportJsonBtn: document.getElementById("exportJsonBtn"),
   importJsonInput: document.getElementById("importJsonInput"),
+  refreshCacheBtn: document.getElementById("refreshCacheBtn"),
   resetBtn: document.getElementById("resetBtn"),
   status: document.getElementById("status")
 };
@@ -243,6 +244,10 @@ function wireEvents() {
 
   els.exportJsonBtn.addEventListener("click", exportJson);
   els.importJsonInput.addEventListener("change", importJson);
+
+  if (els.refreshCacheBtn) {
+    els.refreshCacheBtn.addEventListener("click", refreshAppCache);
+  }
 
   els.resetBtn.addEventListener("click", () => {
     if (!confirm("Do you really want to delete all local data?")) return;
@@ -2513,6 +2518,39 @@ function sumBy(items, key) {
 
 function setStatus(message) {
   els.status.textContent = message;
+}
+
+async function refreshAppCache() {
+  if (els.refreshCacheBtn) els.refreshCacheBtn.disabled = true;
+
+  try {
+    setStatus("Refreshing app cache...");
+
+    let registration = null;
+    if ("serviceWorker" in navigator) {
+      registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        await registration.update();
+      }
+    }
+
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    }
+
+    if (registration && registration.waiting) {
+      registration.waiting.postMessage({ type: "SKIP_WAITING" });
+    }
+
+    setStatus("App cache refreshed. Reloading...");
+    setTimeout(() => {
+      location.reload();
+    }, 150);
+  } catch {
+    setStatus("App cache refresh failed.");
+    if (els.refreshCacheBtn) els.refreshCacheBtn.disabled = false;
+  }
 }
 
 function formatCurrency(value, currency = getMainCurrency(), options = {}) {
