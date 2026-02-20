@@ -1821,24 +1821,46 @@ function getXAxisLabelStep(labelsCount, plotWidthCssPx, minSpacingCssPx) {
   return Math.max(1, Math.ceil((labelsCount - 1) / (slots - 1)));
 }
 
+function isPhoneLikeViewport() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(pointer: coarse) and (hover: none) and (max-width: 900px)").matches;
+}
+
+function formatChartAxisLabel(value, { type = "currency", compact = false } = {}) {
+  const numeric = Number(value || 0);
+  if (type === "percent") {
+    return `${numeric.toFixed(compact ? 1 : 2)} %`;
+  }
+
+  if (!compact) {
+    return formatCurrency(numeric, getMainCurrency(), { minFractionDigits: 0, maxFractionDigits: 2 });
+  }
+
+  try {
+    const shortened = new Intl.NumberFormat("cs-CZ", {
+      notation: "compact",
+      maximumFractionDigits: 1,
+      minimumFractionDigits: 0
+    }).format(numeric);
+    return `${shortened} ${getMainCurrency()}`;
+  } catch {
+    return formatCurrency(numeric, getMainCurrency(), { minFractionDigits: 0, maxFractionDigits: 1 });
+  }
+}
+
 function drawCashChart(canvas, labels, data) {
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
   const cssWidth = Math.max(1, canvas.clientWidth || 0);
   const cssHeight = Math.max(1, canvas.clientHeight || Number(canvas.getAttribute("height")) || 220);
+  const isPhone = isPhoneLikeViewport();
   const isCompact = cssWidth < 430;
+  const useCompactYAxisLabels = isPhone && isCompact;
   const width = canvas.width = Math.floor(cssWidth * dpr);
   const height = canvas.height = Math.floor(cssHeight * dpr);
 
   ctx.clearRect(0, 0, width, height);
   if (!labels.length) return;
-
-  const left = (isCompact ? 68 : 86) * dpr;
-  const right = 28 * dpr;
-  const top = 30 * dpr;
-  const bottom = (isCompact ? 42 : 34) * dpr;
-  const plotWidth = Math.max(1, width - left - right);
-  const plotHeight = Math.max(1, height - top - bottom);
 
   const positiveValues = [];
   [data.assets, data.prediction, data.goal, data.trendline].forEach((series) => {
@@ -1864,6 +1886,30 @@ function drawCashChart(canvas, labels, data) {
   const axisMax = Math.pow(10, maxPower);
   const axisLogRange = Math.log10(axisMax) - Math.log10(axisMin);
 
+  const yAxisLabels = [];
+  for (let power = minPower; power <= maxPower; power += 1) {
+    const value = Math.pow(10, power);
+    yAxisLabels.push(formatChartAxisLabel(value, { compact: useCompactYAxisLabels }));
+  }
+
+  const axisFontCssPx = useCompactYAxisLabels ? 9 : 10;
+  ctx.font = `${axisFontCssPx * dpr}px sans-serif`;
+  const maxYAxisLabelWidth = yAxisLabels.reduce((maxWidth, label) => {
+    const widthForLabel = ctx.measureText(label).width;
+    return Math.max(maxWidth, widthForLabel);
+  }, 0);
+
+  const minLeft = (isCompact ? 52 : 72) * dpr;
+  const maxLeft = Math.floor(width * (isCompact ? 0.36 : 0.33));
+  const left = Math.max(minLeft, Math.min(maxLeft, Math.ceil(maxYAxisLabelWidth + (16 * dpr))));
+  const right = (isCompact ? 18 : 28) * dpr;
+  const top = 30 * dpr;
+  const bottom = (isCompact ? 42 : 34) * dpr;
+  const plotWidth = Math.max(1, width - left - right);
+  const plotHeight = Math.max(1, height - top - bottom);
+  const axisStrokeWidth = (isPhone ? 0.8 : 1) * dpr;
+  const seriesStrokeWidth = (isPhone ? 1.4 : 2) * dpr;
+
   const xForIndex = (index) => {
     if (labels.length <= 1) return left + (plotWidth / 2);
     return left + ((index * plotWidth) / (labels.length - 1));
@@ -1878,21 +1924,22 @@ function drawCashChart(canvas, labels, data) {
   };
 
   ctx.strokeStyle = "#2c3c59";
-  ctx.lineWidth = 1 * dpr;
+  ctx.lineWidth = axisStrokeWidth;
   ctx.fillStyle = "#8ea2c2";
-  ctx.font = `${10 * dpr}px sans-serif`;
+  ctx.font = `${axisFontCssPx * dpr}px sans-serif`;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
 
-  for (let power = minPower; power <= maxPower; power += 1) {
+  yAxisLabels.forEach((label, index) => {
+    const power = minPower + index;
     const value = Math.pow(10, power);
     const y = yForValue(value);
     ctx.beginPath();
     ctx.moveTo(left, y);
     ctx.lineTo(left + plotWidth, y);
     ctx.stroke();
-    ctx.fillText(formatCurrency(value, getMainCurrency(), { minFractionDigits: 0, maxFractionDigits: 2 }), left - (8 * dpr), y);
-  }
+    ctx.fillText(label, left - (8 * dpr), y);
+  });
 
   ctx.beginPath();
   ctx.moveTo(left, top);
@@ -1911,9 +1958,9 @@ function drawCashChart(canvas, labels, data) {
     ctx.fillRect(x - (barWidth / 2), y, barWidth, barHeight);
   });
 
-  const drawSeries = (values, color, lineWidth = 2) => {
+  const drawSeries = (values, color) => {
     ctx.strokeStyle = color;
-    ctx.lineWidth = lineWidth * dpr;
+    ctx.lineWidth = seriesStrokeWidth;
     ctx.beginPath();
 
     let started = false;
@@ -1937,9 +1984,9 @@ function drawCashChart(canvas, labels, data) {
     ctx.stroke();
   };
 
-  drawSeries(data.prediction, "#f59e0b", 2);
-  drawSeries(data.goal, "#ef4444", 2);
-  drawSeries(data.trendline, "#93c5fd", 2);
+  drawSeries(data.prediction, "#f59e0b");
+  drawSeries(data.goal, "#ef4444");
+  drawSeries(data.trendline, "#93c5fd");
 
   ctx.fillStyle = "#8ea2c2";
   ctx.textBaseline = "top";
@@ -1975,7 +2022,7 @@ function drawCashChart(canvas, labels, data) {
       legendX += 16 * dpr;
     } else {
       ctx.strokeStyle = item.color;
-      ctx.lineWidth = 2 * dpr;
+      ctx.lineWidth = seriesStrokeWidth;
       ctx.beginPath();
       ctx.moveTo(legendX, legendY);
       ctx.lineTo(legendX + (12 * dpr), legendY);
@@ -1994,20 +2041,15 @@ function drawLineChart(canvas, labels, series, options = {}) {
   const dpr = window.devicePixelRatio || 1;
   const cssWidth = Math.max(1, canvas.clientWidth || Number(canvas.getAttribute("width")) || 300);
   const cssHeight = Math.max(1, canvas.clientHeight || Number(canvas.getAttribute("height")) || 220);
+  const isPhone = isPhoneLikeViewport();
   const isCompact = cssWidth < 430;
+  const useCompactYAxisLabels = isPhone && isCompact;
   const width = canvas.width = Math.floor(cssWidth * dpr);
   const height = canvas.height = Math.floor(cssHeight * dpr);
 
   ctx.clearRect(0, 0, width, height);
 
   if (!labels.length) return;
-
-  const left = (isCompact ? 68 : 86) * dpr;
-  const right = 24 * dpr;
-  const top = 30 * dpr;
-  const bottom = (isCompact ? 42 : 34) * dpr;
-  const plotWidth = Math.max(1, width - left - right);
-  const plotHeight = Math.max(1, height - top - bottom);
 
   const allValues = series
     .reduce((acc, line) => acc.concat(line.values), [])
@@ -2027,6 +2069,37 @@ function drawLineChart(canvas, labels, series, options = {}) {
   }
   const range = max - min;
 
+  const yTicks = isCompact ? 4 : 5;
+  const yAxisType = options.yAxisType === "percent" ? "percent" : "currency";
+  const hasYAxisLabelOption = Object.prototype.hasOwnProperty.call(options, "yAxisLabel");
+  const yAxisLabel = hasYAxisLabelOption
+    ? String(options.yAxisLabel || "")
+    : `Values (${getMainCurrency()})`;
+  const formatYAxisValue = (value) => formatChartAxisLabel(value, { type: yAxisType, compact: useCompactYAxisLabels });
+
+  const axisFontCssPx = useCompactYAxisLabels ? 9 : 10;
+  ctx.font = `${axisFontCssPx * dpr}px sans-serif`;
+  const yTickLabels = Array.from({ length: yTicks + 1 }, (_, tick) => {
+    const ratio = tick / yTicks;
+    const value = max - (ratio * range);
+    return formatYAxisValue(value);
+  });
+  const maxYAxisLabelWidth = yTickLabels.reduce((maxWidth, label) => {
+    const widthForLabel = ctx.measureText(label).width;
+    return Math.max(maxWidth, widthForLabel);
+  }, 0);
+
+  const minLeft = (isCompact ? 52 : 72) * dpr;
+  const maxLeft = Math.floor(width * (isCompact ? 0.36 : 0.33));
+  const left = Math.max(minLeft, Math.min(maxLeft, Math.ceil(maxYAxisLabelWidth + (16 * dpr))));
+  const right = (isCompact ? 18 : 24) * dpr;
+  const top = 30 * dpr;
+  const bottom = (isCompact ? 42 : 34) * dpr;
+  const plotWidth = Math.max(1, width - left - right);
+  const plotHeight = Math.max(1, height - top - bottom);
+  const axisStrokeWidth = (isPhone ? 0.8 : 1) * dpr;
+  const seriesStrokeWidth = (isPhone ? 1.4 : 2) * dpr;
+
   const xForIndex = (index) => {
     if (labels.length <= 1) return left + (plotWidth / 2);
     return left + ((index * plotWidth) / (labels.length - 1));
@@ -2037,20 +2110,10 @@ function drawLineChart(canvas, labels, series, options = {}) {
     return top + plotHeight - (ratio * plotHeight);
   };
 
-  const yTicks = isCompact ? 4 : 5;
-  const yAxisType = options.yAxisType === "percent" ? "percent" : "currency";
-  const hasYAxisLabelOption = Object.prototype.hasOwnProperty.call(options, "yAxisLabel");
-  const yAxisLabel = hasYAxisLabelOption
-    ? String(options.yAxisLabel || "")
-    : `Values (${getMainCurrency()})`;
-  const formatYAxisValue = (value) => {
-    if (yAxisType === "percent") return `${Number(value).toFixed(2)} %`;
-    return formatCurrency(value, getMainCurrency(), { minFractionDigits: 0, maxFractionDigits: 2 });
-  };
   ctx.strokeStyle = "#2c3c59";
-  ctx.lineWidth = 1 * dpr;
+  ctx.lineWidth = axisStrokeWidth;
   ctx.fillStyle = "#8ea2c2";
-  ctx.font = `${10 * dpr}px sans-serif`;
+  ctx.font = `${axisFontCssPx * dpr}px sans-serif`;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
 
@@ -2066,7 +2129,7 @@ function drawLineChart(canvas, labels, series, options = {}) {
   }
 
   ctx.strokeStyle = "#3a4b6a";
-  ctx.lineWidth = 1 * dpr;
+  ctx.lineWidth = axisStrokeWidth;
   ctx.beginPath();
   ctx.moveTo(left, top);
   ctx.lineTo(left, top + plotHeight);
@@ -2075,7 +2138,7 @@ function drawLineChart(canvas, labels, series, options = {}) {
 
   series.forEach((line) => {
     ctx.strokeStyle = line.color;
-    ctx.lineWidth = 2 * dpr;
+    ctx.lineWidth = seriesStrokeWidth;
     ctx.beginPath();
 
     let started = false;
@@ -2124,7 +2187,7 @@ function drawLineChart(canvas, labels, series, options = {}) {
   let legendX = left + (12 * dpr);
   series.forEach((line) => {
     ctx.strokeStyle = line.color;
-    ctx.lineWidth = 2 * dpr;
+    ctx.lineWidth = seriesStrokeWidth;
     ctx.beginPath();
     ctx.moveTo(legendX, legendY);
     ctx.lineTo(legendX + (12 * dpr), legendY);
