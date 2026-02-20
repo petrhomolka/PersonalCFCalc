@@ -15,9 +15,6 @@
         <h1>Personal Finance</h1>
         <div class="topbar-controls">
           <div id="appVersionLabel" class="app-version-chip" aria-label="App version"></div>
-          <label class="inline compact-inline">Main Currency
-            <select id="appCurrencySelect"></select>
-          </label>
           <div id="activeMonthLabel" class="month-chip"></div>
         </div>
       </header>
@@ -149,6 +146,9 @@
             <button type="submit">Save asset</button>
           </form>
           <div class="stack asset-tools">
+            <label class="compact-inline">Main Currency
+              <select id="appCurrencySelect"></select>
+            </label>
             <div class="row-actions favorites-row">
               <button id="manageFavoritesBtn" type="button">Favorite currencies</button>
               <small id="favoritesSummary"></small>
