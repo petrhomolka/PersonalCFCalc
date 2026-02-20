@@ -487,14 +487,36 @@ function renderEntryList(listEl, month, type, items) {
     return;
   }
 
-  items.forEach((item) => {
+  const periodicItems = items.filter((item) => item.periodic === true);
+  const oneTimeItems = items.filter((item) => item.periodic !== true);
+  const orderedItems = periodicItems.concat(oneTimeItems);
+
+  if (periodicItems.length && oneTimeItems.length) {
+    const periodicHeader = document.createElement("li");
+    periodicHeader.className = "entry-section-header";
+    periodicHeader.innerHTML = "<small>Periodical</small>";
+    listEl.appendChild(periodicHeader);
+  }
+
+  orderedItems.forEach((item, index) => {
+    if (periodicItems.length && oneTimeItems.length && index === periodicItems.length) {
+      const oneTimeHeader = document.createElement("li");
+      oneTimeHeader.className = "entry-section-header";
+      oneTimeHeader.innerHTML = "<small>One-time</small>";
+      listEl.appendChild(oneTimeHeader);
+    }
+
     const li = document.createElement("li");
+    li.className = item.periodic ? "periodic-item" : "one-time-item";
     const periodicText = item.periodic ? "periodical" : "one-time";
+    const periodicBadge = item.periodic
+      ? '<small class="item-badge periodic-badge">PERIODICAL</small>'
+      : '<small class="item-badge onetime-badge">ONE-TIME</small>';
     const autoText = item.carriedFrom ? `<small>(auto z ${item.carriedFrom})</small>` : "";
     li.innerHTML = `
       <span>
         ${escapeHtml(item.name)}
-        ${item.periodic !== undefined ? `<small>(${periodicText})</small>` : ""}
+        ${item.periodic !== undefined ? periodicBadge : ""}
         ${autoText}
       </span>
       <span class="row-actions">

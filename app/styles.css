@@ -170,6 +170,38 @@ li {
   font-size: 0.9rem;
 }
 
+li.periodic-item {
+  border-left: 3px solid var(--accent2);
+  padding-left: 8px;
+}
+
+li.one-time-item {
+  border-left: 3px solid #64748b;
+  padding-left: 8px;
+}
+
+li.entry-section-header {
+  border-bottom: 0;
+  padding: 10px 0 4px;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.item-badge {
+  margin-left: 6px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.periodic-badge {
+  color: var(--accent2);
+}
+
+.onetime-badge {
+  color: #94a3b8;
+}
+
 li small { color: var(--muted); }
 
 .row-actions {
