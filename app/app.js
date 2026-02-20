@@ -546,26 +546,17 @@ function renderEntryList(listEl, month, type, items) {
 
   const periodicItems = items.filter((item) => item.periodic === true);
   const oneTimeItems = items.filter((item) => item.periodic !== true);
-  const orderedItems = periodicItems.concat(oneTimeItems);
 
-  if (periodicItems.length && oneTimeItems.length) {
+  if (periodicItems.length) {
     const periodicHeader = document.createElement("li");
     periodicHeader.className = "entry-section-header";
     periodicHeader.innerHTML = "<small>Periodical</small>";
     listEl.appendChild(periodicHeader);
   }
 
-  orderedItems.forEach((item, index) => {
-    if (periodicItems.length && oneTimeItems.length && index === periodicItems.length) {
-      const oneTimeHeader = document.createElement("li");
-      oneTimeHeader.className = "entry-section-header";
-      oneTimeHeader.innerHTML = "<small>One-time</small>";
-      listEl.appendChild(oneTimeHeader);
-    }
-
+  const appendEntryRow = (item) => {
     const li = document.createElement("li");
     li.className = item.periodic ? "periodic-item" : "one-time-item";
-    const periodicText = item.periodic ? "periodical" : "one-time";
     const periodicBadge = item.periodic
       ? '<small class="item-badge periodic-badge">PERIODICAL</small>'
       : '<small class="item-badge onetime-badge">ONE-TIME</small>';
@@ -587,10 +578,24 @@ function renderEntryList(listEl, month, type, items) {
       </span>
     `;
     listEl.appendChild(li);
-  });
+  };
+
+  periodicItems.forEach(appendEntryRow);
 
   if (type === "expense") {
     renderExpenseSummarySection(listEl, periodicItems, "Součet periodických výdajů", "periodic");
+  }
+
+  if (oneTimeItems.length) {
+    const oneTimeHeader = document.createElement("li");
+    oneTimeHeader.className = "entry-section-header";
+    oneTimeHeader.innerHTML = "<small>One-time</small>";
+    listEl.appendChild(oneTimeHeader);
+  }
+
+  oneTimeItems.forEach(appendEntryRow);
+
+  if (type === "expense") {
     renderExpenseSummarySection(listEl, items, "Celkem výdaje (vč. one-time)", "overall");
   }
 
