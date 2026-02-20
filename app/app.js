@@ -1471,8 +1471,8 @@ function renderGoalsTable() {
     tr.innerHTML = `
       <td>${escapeHtml(month)}</td>
       <td><input class="${goalClass}" type="number" step="0.01" data-month="${month}" data-field="goal" value="${goalRow.goal || 0}" /></td>
-      <td><input class="${assetGoalClass}" type="number" step="0.01" data-month="${month}" data-field="assetGoal" value="${goalRow.assetGoal || 0}" /></td>
       <td><input class="${predictionClass}" type="number" step="0.01" data-month="${month}" data-field="predikce" value="${goalRow.predikce || 0}" /></td>
+      <td><input class="${assetGoalClass}" type="number" step="0.01" data-month="${month}" data-field="assetGoal" value="${goalRow.assetGoal || 0}" /></td>
       <td><input class="${assetPredictionClass}" type="number" step="0.01" data-month="${month}" data-field="assetPrediction" value="${goalRow.assetPrediction || 0}" /></td>
     `;
     els.goalTableBody.appendChild(tr);
