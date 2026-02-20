@@ -1,5 +1,5 @@
 const STORAGE_KEY = "pf_app_v1";
-const HISTORICAL_IMPORT_VERSION = 2;
+const HISTORICAL_IMPORT_VERSION = 3;
 
 function createId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
@@ -21,11 +21,14 @@ const initialState = {
 };
 
 const state = loadState();
+let nextMonthArmTimeout = null;
+let isNextMonthArmed = false;
 const els = {
   runtimeError: document.getElementById("runtimeError"),
   tabs: document.getElementById("tabs"),
   panels: document.querySelectorAll(".panel"),
   monthSelect: document.getElementById("monthSelect"),
+  startNextMonthBtn: document.getElementById("startNextMonthBtn"),
   activeMonthLabel: document.getElementById("activeMonthLabel"),
   kpiIncome: document.getElementById("kpiIncome"),
   kpiExpense: document.getElementById("kpiExpense"),
@@ -36,7 +39,7 @@ const els = {
   kpiPassiveCf: document.getElementById("kpiPassiveCf"),
   kpiPassiveIncome: document.getElementById("kpiPassiveIncome"),
   kpiInvestIncomeRatio: document.getElementById("kpiInvestIncomeRatio"),
-  kpiRealita: document.getElementById("kpiRealita"),
+  kpiFreeCash: document.getElementById("kpiFreeCash"),
   kpiPredikce: document.getElementById("kpiPredikce"),
   kpiAssetChange: document.getElementById("kpiAssetChange"),
   entryForm: document.getElementById("entryForm"),
@@ -50,6 +53,7 @@ const els = {
   assetForm: document.getElementById("assetForm"),
   assetName: document.getElementById("assetName"),
   assetValue: document.getElementById("assetValue"),
+  assetIsCash: document.getElementById("assetIsCash"),
   assetList: document.getElementById("assetList"),
   goalTableBody: document.getElementById("goalTableBody"),
   addYearBtn: document.getElementById("addYearBtn"),
@@ -150,6 +154,10 @@ function wireEvents() {
     render();
   });
 
+  if (els.startNextMonthBtn) {
+    els.startNextMonthBtn.addEventListener("click", onStartNextMonthClick);
+  }
+
   els.entryForm.addEventListener("submit", (event) => {
     event.preventDefault();
     addEntry({
@@ -168,7 +176,8 @@ function wireEvents() {
     addAsset({
       month: els.monthSelect.value,
       name: els.assetName.value.trim(),
-      value: Number(els.assetValue.value)
+      value: Number(els.assetValue.value),
+      isCash: Boolean(els.assetIsCash && els.assetIsCash.checked)
     });
     els.assetForm.reset();
     render();
@@ -251,13 +260,14 @@ function addEntry({ month, type, name, amount, periodic }) {
   saveState();
 }
 
-function addAsset({ month, name, value }) {
+function addAsset({ month, name, value, isCash }) {
   if (!month || !name || Number.isNaN(value)) return;
   ensureMonth(month);
   state.months[month].assets.push({
     id: createId(),
     name,
     value,
+    isCash: Boolean(isCash),
     createdAt: Date.now()
   });
   saveState();
@@ -341,6 +351,96 @@ function getPreviousMonth(month) {
   return `${prevYear}-${prevMonth}`;
 }
 
+function getNextMonth(month) {
+  const [yearText, monthText] = month.split("-");
+  const year = Number(yearText);
+  const monthNumber = Number(monthText);
+  if (!year || !monthNumber) return null;
+
+  const date = new Date(year, monthNumber, 1);
+  const nextYear = date.getFullYear();
+  const nextMonth = String(date.getMonth() + 1).padStart(2, "0");
+  return `${nextYear}-${nextMonth}`;
+}
+
+function onStartNextMonthClick() {
+  if (!isNextMonthArmed) {
+    armStartNextMonthButton();
+    return;
+  }
+
+  disarmStartNextMonthButton();
+  startNextMonth();
+}
+
+function armStartNextMonthButton() {
+  isNextMonthArmed = true;
+  if (els.startNextMonthBtn) {
+    els.startNextMonthBtn.textContent = "Confirm start next month";
+  }
+
+  if (nextMonthArmTimeout) clearTimeout(nextMonthArmTimeout);
+  nextMonthArmTimeout = setTimeout(() => {
+    disarmStartNextMonthButton();
+  }, 7000);
+}
+
+function disarmStartNextMonthButton() {
+  isNextMonthArmed = false;
+  if (nextMonthArmTimeout) {
+    clearTimeout(nextMonthArmTimeout);
+    nextMonthArmTimeout = null;
+  }
+
+  if (els.startNextMonthBtn) {
+    els.startNextMonthBtn.textContent = "Start next month";
+  }
+}
+
+function startNextMonth() {
+  const currentMonth = els.monthSelect.value;
+  const nextMonth = getNextMonth(currentMonth);
+  if (!nextMonth) {
+    setStatus("Nelze spočítat další měsíc.");
+    return;
+  }
+
+  const confirmed = confirm(`Přepnout na ${nextMonth} a přenést assets z ${currentMonth}?`);
+  if (!confirmed) return;
+
+  ensureMonth(currentMonth);
+  ensureMonth(nextMonth);
+  carryAssetsToNextMonth(currentMonth, nextMonth);
+
+  els.monthSelect.value = nextMonth;
+  saveState();
+  render();
+  setStatus(`Vytvořen měsíc ${nextMonth} a assets přeneseny z ${currentMonth}.`);
+}
+
+function carryAssetsToNextMonth(fromMonth, toMonth) {
+  const source = (state.months[fromMonth] && state.months[fromMonth].assets) || [];
+  const target = (state.months[toMonth] && state.months[toMonth].assets) || [];
+
+  const existingKeys = new Set(target.map((item) => item.sourceAssetKey || `${item.name}|${item.value}`));
+
+  source.forEach((item) => {
+    const sourceAssetKey = `${item.name}|${item.value}`;
+    if (existingKeys.has(sourceAssetKey)) return;
+
+    target.push({
+      id: createId(),
+      name: item.name,
+      value: Number(item.value) || 0,
+      isCash: isCashAsset(item),
+      carriedFrom: fromMonth,
+      sourceAssetKey,
+      createdAt: Date.now()
+    });
+    existingKeys.add(sourceAssetKey);
+  });
+}
+
 function render() {
   const month = els.monthSelect.value;
   els.activeMonthLabel.textContent = month;
@@ -352,11 +452,11 @@ function render() {
   els.kpiInvest.textContent = formatCurrency(totals.investment);
   els.kpiCashflow.textContent = formatCurrency(totals.cashflow);
   els.kpiAssets.textContent = formatCurrency(totals.assets);
-  els.kpiAssetGoal.textContent = formatCurrency(totals.assetGoal);
+  els.kpiAssetGoal.textContent = formatCurrency(totals.goal);
   els.kpiPassiveCf.textContent = formatCurrency(totals.passiveCf);
   els.kpiPassiveIncome.textContent = formatCurrency(totals.passiveIncome);
   els.kpiInvestIncomeRatio.textContent = formatPercent(totals.investIncomeRatio);
-  els.kpiRealita.textContent = formatCurrency(totals.realita);
+  els.kpiFreeCash.textContent = formatCurrency(totals.freeCash);
   els.kpiPredikce.textContent = formatCurrency(totals.predikce);
   els.kpiAssetChange.textContent = formatCurrency(totals.assetChange);
 
@@ -420,8 +520,9 @@ function renderAssetList(listEl, month, items) {
 
   items.forEach((item) => {
     const li = document.createElement("li");
+    const cashTag = isCashAsset(item) ? '<small>(cash)</small>' : "";
     li.innerHTML = `
-      <span>${escapeHtml(item.name)}</span>
+      <span>${escapeHtml(item.name)} ${cashTag}</span>
       <span class="row-actions">
         <strong>${formatCurrency(item.value || 0)}</strong>
         <button data-action="edit-asset" data-month="${month}" data-id="${item.id}" type="button">Upravit</button>
@@ -505,9 +606,12 @@ function editAsset(month, id) {
   if (valueText === null) return;
   const value = Number(valueText);
   if (!name.trim() || Number.isNaN(value)) return;
+  const cashByDefault = isCashAsset(item);
+  const isCash = confirm(`Je to cash asset?\n\nOK = ano, Cancel = ne\n(${cashByDefault ? "aktuálně: ano" : "aktuálně: ne"})`);
 
   item.name = name.trim();
   item.value = value;
+  item.isCash = isCash;
   item.updatedAt = Date.now();
 
   saveState();
@@ -667,6 +771,9 @@ function getTotalsForMonth(month) {
   const localExpense = sumBy(monthData.expense, "amount");
   const localInvestment = sumBy(monthData.investment, "amount");
   const localAssets = sumBy(monthData.assets, "value");
+  const localFreeCash = monthData.assets
+    .filter((item) => isCashAsset(item))
+    .reduce((sum, item) => sum + (Number(item.value) || 0), 0);
 
   const imported = state.importedSummaries[month] || {};
   ensureGoalMonth(month);
@@ -689,6 +796,7 @@ function getTotalsForMonth(month) {
     assetChange: imported.assetChange || 0,
     assetGoal: Number(monthGoal.assetGoal || imported.assetGoal || 0),
     assetPrediction: Number(monthGoal.assetPrediction || imported.assetPrediction || 0),
+    freeCash: localFreeCash || imported.freeCash || 0,
     passiveCf: imported.passiveCf || 0,
     passiveIncome: imported.passiveIncome || 0,
     investIncomeRatio: imported.investIncomeRatio || 0
@@ -875,6 +983,7 @@ function hydrateFromSheetRows(rows) {
     const goal = parseMoney(row[monthIndex + 2]);
     const notes = (row[monthIndex + 3] || "").trim();
     const predikce = parseMoney(row[monthIndex + 4]);
+    const freeCash = parseFreeCash(row, monthIndex);
     const assetChange = parseMoney(row[monthIndex + 6]);
     const assetGoal = parseMoney(row[monthIndex + 7]);
     const assetPrediction = parseMoney(row[monthIndex + 8]);
@@ -894,6 +1003,7 @@ function hydrateFromSheetRows(rows) {
       assetChange,
       assetGoal,
       assetPrediction,
+      freeCash,
       passiveCf,
       passiveIncome,
       investIncomeRatio,
@@ -919,6 +1029,22 @@ function hydrateFromSheetRows(rows) {
   return count;
 }
 
+function parseFreeCash(row, monthIndex) {
+  const possibleLabels = [
+    row[monthIndex - 5],
+    row[monthIndex - 4],
+    row[monthIndex - 3]
+  ];
+
+  const hasFreeCashLabel = possibleLabels.some((value) => String(value || "").toLowerCase().includes("free cash"));
+  if (!hasFreeCashLabel) return 0;
+
+  const preferredValue = parseMoney(row[monthIndex - 2]);
+  if (preferredValue !== 0) return preferredValue;
+
+  return parseMoney(row[monthIndex - 3]);
+}
+
 function upsertImportedMonthlyRows(month, summary) {
   const monthData = state.months[month];
   if (!monthData) return;
@@ -931,7 +1057,7 @@ function upsertImportedMonthlyRows(month, summary) {
   upsertImportedEntry(monthData.income, "sporici ucet", passiveIncome);
   upsertImportedEntry(monthData.expense, "Imported výdaje (CSV)", summary.expense);
   upsertImportedEntry(monthData.investment, "Imported investice (CSV)", summary.investment);
-  upsertImportedAsset(monthData.assets, "Imported assets total (CSV)", summary.assets);
+  upsertImportedAsset(monthData.assets, "Imported assets total (CSV)", summary.assets, false);
 }
 
 function upsertImportedEntry(list, name, amount) {
@@ -953,11 +1079,12 @@ function upsertImportedEntry(list, name, amount) {
   });
 }
 
-function upsertImportedAsset(list, name, value) {
+function upsertImportedAsset(list, name, value, isCash = false) {
   if (!Number.isFinite(value)) return;
   const existing = list.find((item) => item.source === "imported-csv-summary" && item.name === name);
   if (existing) {
     existing.value = value;
+    existing.isCash = Boolean(isCash);
     existing.updatedAt = Date.now();
     return;
   }
@@ -966,9 +1093,21 @@ function upsertImportedAsset(list, name, value) {
     id: createId(),
     name,
     value,
+    isCash: Boolean(isCash),
     source: "imported-csv-summary",
     createdAt: Date.now()
   });
+}
+
+function isCashAsset(asset) {
+  if (!asset) return false;
+  if (typeof asset.isCash === "boolean") return asset.isCash;
+  return isCashAssetName(asset.name);
+}
+
+function isCashAssetName(name) {
+  const text = String(name || "").trim().toLowerCase();
+  return text.startsWith("cash") || text.includes("free cash") || text.includes("z toho free cash");
 }
 
 function parseCsv(text) {

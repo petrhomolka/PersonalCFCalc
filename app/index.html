@@ -29,6 +29,7 @@
         <div class="month-selector-wrap">
           <label for="monthSelect">Měsíc</label>
           <input id="monthSelect" type="month" />
+          <button id="startNextMonthBtn" type="button" class="danger">Start next month</button>
         </div>
 
         <div class="kpi-grid">
@@ -41,7 +42,7 @@
           <article class="card"><h3>Passive CF</h3><p id="kpiPassiveCf">0 Kč</p></article>
           <article class="card"><h3>Passive Income</h3><p id="kpiPassiveIncome">0 Kč</p></article>
           <article class="card"><h3>Invest/Income</h3><p id="kpiInvestIncomeRatio">0 %</p></article>
-          <article class="card"><h3>Realita</h3><p id="kpiRealita">0 Kč</p></article>
+          <article class="card"><h3>Free Cash</h3><p id="kpiFreeCash">0 Kč</p></article>
           <article class="card"><h3>Predikce</h3><p id="kpiPredikce">0 Kč</p></article>
           <article class="card"><h3>Asset Change</h3><p id="kpiAssetChange">0 Kč</p></article>
         </div>
@@ -119,6 +120,9 @@
             </label>
             <label>Hodnota (Kč)
               <input id="assetValue" type="number" step="0.01" required />
+            </label>
+            <label class="inline">
+              <input id="assetIsCash" type="checkbox" /> Cash asset
             </label>
             <button type="submit">Uložit asset</button>
           </form>
