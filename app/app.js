@@ -1,4 +1,5 @@
 const STORAGE_KEY = "pf_app_v1";
+const APP_VERSION = "v1.0.1";
 const HISTORICAL_IMPORT_VERSION = 3;
 const DEFAULT_MAIN_CURRENCY = "CZK";
 const MAJOR_CRYPTO_CURRENCIES = [
@@ -94,6 +95,7 @@ const els = {
   monthSelect: document.getElementById("monthSelect"),
   startNextMonthBtn: document.getElementById("startNextMonthBtn"),
   appCurrencySelect: document.getElementById("appCurrencySelect"),
+  appVersionLabel: document.getElementById("appVersionLabel"),
   activeMonthLabel: document.getElementById("activeMonthLabel"),
   kpiIncome: document.getElementById("kpiIncome"),
   kpiExpense: document.getElementById("kpiExpense"),
@@ -161,6 +163,10 @@ async function boot() {
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   els.monthSelect.value = month;
+
+  if (els.appVersionLabel) {
+    els.appVersionLabel.textContent = `Version ${APP_VERSION}`;
+  }
 
   ensureCurrencySettings();
   ensureMonth(els.monthSelect.value);

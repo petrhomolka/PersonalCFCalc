@@ -55,6 +55,13 @@ body {
   color: var(--muted);
 }
 
+.app-version-chip {
+  font-size: 0.7rem;
+  color: var(--muted);
+  opacity: 0.9;
+  letter-spacing: 0.02em;
+}
+
 .runtime-error {
   margin: 8px 0;
   padding: 10px;
@@ -434,6 +441,10 @@ li small { color: var(--muted); }
 }
 
 @media (max-width: 720px) {
+  .app-version-chip {
+    font-size: 0.66rem;
+  }
+
   .kpi-grid {
     grid-template-columns: 1fr;
   }
