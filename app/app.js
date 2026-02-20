@@ -266,6 +266,15 @@ function wireEvents() {
 
   window.addEventListener("resize", onViewportChange);
   window.addEventListener("orientationchange", onViewportChange);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      if (viewportRenderTimeout) clearTimeout(viewportRenderTimeout);
+      viewportRenderTimeout = setTimeout(() => {
+        render();
+      }, 80);
+    }
+  });
 }
 
 function clearImportedSummaryData() {
@@ -288,6 +297,10 @@ function onTabClick(event) {
 
   els.panels.forEach((panel) => panel.classList.remove("active"));
   document.getElementById(tab.dataset.tab).classList.add("active");
+
+  if (tab.dataset.tab === "dashboard") {
+    render();
+  }
 }
 
 function addEntry({ month, type, name, amount, periodic, category, isPassive }) {
@@ -582,12 +595,17 @@ function render() {
 
   renderLists(month);
   renderGoalsTable();
-  renderTrendChart();
-  renderAssetChart();
-  renderMacroChart();
-  renderAssetMacroChart();
-  renderCashflowChart();
-  renderIncomeChart();
+
+  const dashboardPanel = document.getElementById("dashboard");
+  const isDashboardActive = Boolean(dashboardPanel && dashboardPanel.classList.contains("active"));
+  if (isDashboardActive) {
+    renderTrendChart();
+    renderAssetChart();
+    renderMacroChart();
+    renderAssetMacroChart();
+    renderCashflowChart();
+    renderIncomeChart();
+  }
 }
 
 function setKpiWithYearly(element, monthlyValue, options = {}) {
