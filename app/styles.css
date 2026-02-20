@@ -230,6 +230,12 @@ li.expense-summary-overall {
   background: rgba(21, 41, 73, 0.35);
 }
 
+li.investment-summary {
+  border-bottom: 0;
+  padding: 5px 0;
+  color: #bfdbfe;
+}
+
 li small { color: var(--muted); }
 
 .row-actions {

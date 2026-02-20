@@ -594,7 +594,39 @@ function renderEntryList(listEl, month, type, items) {
     renderExpenseSummarySection(listEl, items, "Celkem výdaje (vč. one-time)", "overall");
   }
 
+  if (type === "investment") {
+    renderInvestmentSummarySection(listEl, month, items);
+  }
+
   bindRowActions(listEl);
+}
+
+function renderInvestmentSummarySection(listEl, month, investmentItems) {
+  const totalInvestment = sumBy(investmentItems, "amount");
+  const monthData = state.months[month] || { income: [] };
+  const incomeTotal = sumBy(monthData.income || [], "amount");
+  const ratio = incomeTotal > 0 ? (totalInvestment / incomeTotal) * 100 : 0;
+
+  const header = document.createElement("li");
+  header.className = "entry-section-header";
+  header.innerHTML = "<small>Investment summary</small>";
+  listEl.appendChild(header);
+
+  const totalRow = document.createElement("li");
+  totalRow.className = "investment-summary";
+  totalRow.innerHTML = `
+    <span>Total investments</span>
+    <span class="row-actions"><strong>${formatCurrency(totalInvestment)}</strong></span>
+  `;
+  listEl.appendChild(totalRow);
+
+  const ratioRow = document.createElement("li");
+  ratioRow.className = "investment-summary";
+  ratioRow.innerHTML = `
+    <span>Investment/Income ratio</span>
+    <span class="row-actions"><strong>${formatPercent(ratio)}</strong></span>
+  `;
+  listEl.appendChild(ratioRow);
 }
 
 function renderExpenseSummarySection(listEl, expenseItems, title, mode) {
