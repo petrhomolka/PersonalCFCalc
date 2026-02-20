@@ -583,6 +583,7 @@ li small { color: var(--muted); }
     min-width: 0;
     width: 100%;
     padding: 8px;
+    padding-top: 14px;
     line-height: 1.15;
   }
 }
@@ -601,6 +602,11 @@ li small { color: var(--muted); }
 
   .kpi-grid p {
     font-size: 0.98rem;
+  }
+.goal-achieved-hint {
+    top: 3px;
+    left: 8px;
+    font-size: 0.52rem;
   }
 
   #assetList .row-actions {
@@ -623,6 +629,16 @@ li small { color: var(--muted); }
   font-size: 0.85rem;
 }
 
+.goals-table td {
+  position: relative;
+}
+
+.goal-input-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
 .goals-table th {
   color: var(--muted);
   font-weight: 600;
@@ -632,6 +648,20 @@ li small { color: var(--muted); }
   width: 100%;
   min-width: 150px;
   text-align: right;
+  padding-top: 14px;
+}
+
+.goal-achieved-hint {
+  position: absolute;
+  top: 4px;
+  left: 10px;
+  font-size: 0.58rem;
+  line-height: 1;
+  color: #94a3b8;
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: 1;
+  white-space: nowrap;
 }
 
 .goals-table input.goal-reached {

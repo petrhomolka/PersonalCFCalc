@@ -1404,6 +1404,8 @@ function renderGoalsTable() {
     const assetGoalClass = shouldColorize ? (isAssetGoalReached ? "goal-reached" : "goal-missed") : "";
     const predictionClass = shouldColorize ? (isPredictionReached ? "goal-reached" : "goal-missed") : "";
     const assetPredictionClass = shouldColorize ? (isAssetPredictionReached ? "goal-reached" : "goal-missed") : "";
+    const achievedAssetsHint = shouldColorize ? `<small class="goal-achieved-hint">${escapeHtml(formatGoalsTinyAchieved(totals.assets))}</small>` : "";
+    const achievedAssetChangeHint = shouldColorize ? `<small class="goal-achieved-hint">${escapeHtml(formatGoalsTinyAchieved(totals.assetChange))}</small>` : "";
 
     if (year !== previousYear) {
       const yearHeader = document.createElement("tr");
@@ -1420,10 +1422,10 @@ function renderGoalsTable() {
     tr.className = `${yearClass} ${currentClass}`.trim();
     tr.innerHTML = `
       <td data-label="Month">${escapeHtml(month)}</td>
-      <td data-label="Assets Goal"><input class="${goalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="goal" value="${formatGoalsCurrency(goalRow.goal)}" /></td>
-      <td data-label="Assets Prediction"><input class="${predictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="predikce" value="${formatGoalsCurrency(goalRow.predikce)}" /></td>
-      <td data-label="Assets Change Goal"><input class="${assetGoalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetGoal" value="${formatGoalsCurrency(goalRow.assetGoal)}" /></td>
-      <td data-label="Assets Change Prediction"><input class="${assetPredictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetPrediction" value="${formatGoalsCurrency(goalRow.assetPrediction)}" /></td>
+      <td data-label="Assets Goal"><span class="goal-input-wrap">${achievedAssetsHint}<input class="${goalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="goal" value="${formatGoalsCurrency(goalRow.goal)}" /></span></td>
+      <td data-label="Assets Prediction"><span class="goal-input-wrap">${achievedAssetsHint}<input class="${predictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="predikce" value="${formatGoalsCurrency(goalRow.predikce)}" /></span></td>
+      <td data-label="Assets Change Goal"><span class="goal-input-wrap">${achievedAssetChangeHint}<input class="${assetGoalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetGoal" value="${formatGoalsCurrency(goalRow.assetGoal)}" /></span></td>
+      <td data-label="Assets Change Prediction"><span class="goal-input-wrap">${achievedAssetChangeHint}<input class="${assetPredictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetPrediction" value="${formatGoalsCurrency(goalRow.assetPrediction)}" /></span></td>
     `;
     els.goalTableBody.appendChild(tr);
   });
@@ -1431,6 +1433,20 @@ function renderGoalsTable() {
 
 function formatGoalsCurrency(value) {
   return formatCurrency(Number(value || 0), getMainCurrency(), { minFractionDigits: 0, maxFractionDigits: 2 });
+}
+
+function formatGoalsTinyAchieved(value) {
+  const numeric = Number(value || 0);
+  try {
+    const compact = new Intl.NumberFormat("cs-CZ", {
+      notation: "compact",
+      maximumFractionDigits: 1,
+      minimumFractionDigits: 0
+    }).format(numeric);
+    return `${compact} ${getMainCurrency()}`;
+  } catch {
+    return formatCurrency(numeric, getMainCurrency(), { minFractionDigits: 0, maxFractionDigits: 1 });
+  }
 }
 
 function formatGoalsEditableNumber(value) {
