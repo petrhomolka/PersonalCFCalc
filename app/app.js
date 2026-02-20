@@ -1419,11 +1419,11 @@ function renderGoalsTable() {
     const tr = document.createElement("tr");
     tr.className = `${yearClass} ${currentClass}`.trim();
     tr.innerHTML = `
-      <td>${escapeHtml(month)}</td>
-      <td><input class="${goalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="goal" value="${formatGoalsCurrency(goalRow.goal)}" /></td>
-      <td><input class="${predictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="predikce" value="${formatGoalsCurrency(goalRow.predikce)}" /></td>
-      <td><input class="${assetGoalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetGoal" value="${formatGoalsCurrency(goalRow.assetGoal)}" /></td>
-      <td><input class="${assetPredictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetPrediction" value="${formatGoalsCurrency(goalRow.assetPrediction)}" /></td>
+      <td data-label="Month">${escapeHtml(month)}</td>
+      <td data-label="Assets Goal"><input class="${goalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="goal" value="${formatGoalsCurrency(goalRow.goal)}" /></td>
+      <td data-label="Assets Prediction"><input class="${predictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="predikce" value="${formatGoalsCurrency(goalRow.predikce)}" /></td>
+      <td data-label="Assets Change Goal"><input class="${assetGoalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetGoal" value="${formatGoalsCurrency(goalRow.assetGoal)}" /></td>
+      <td data-label="Assets Change Prediction"><input class="${assetPredictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetPrediction" value="${formatGoalsCurrency(goalRow.assetPrediction)}" /></td>
     `;
     els.goalTableBody.appendChild(tr);
   });
