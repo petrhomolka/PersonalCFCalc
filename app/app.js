@@ -103,7 +103,6 @@ const els = {
   kpiCashflow: document.getElementById("kpiCashflow"),
   kpiAssets: document.getElementById("kpiAssets"),
   kpiPassiveCf: document.getElementById("kpiPassiveCf"),
-  kpiInvestIncomeRatio: document.getElementById("kpiInvestIncomeRatio"),
   kpiFreeCash: document.getElementById("kpiFreeCash"),
   kpiAssetChange: document.getElementById("kpiAssetChange"),
   entryForm: document.getElementById("entryForm"),
@@ -561,14 +560,16 @@ function render() {
 
   setKpiWithYearly(els.kpiIncome, totals.income);
   setKpiWithYearly(els.kpiExpense, totals.expense);
-  setKpiWithYearly(els.kpiInvest, totals.investment);
+  setKpiWithYearly(els.kpiInvest, totals.investment, {
+    subValueLabel: "Investment/Income",
+    subValue: formatPercent(totals.investIncomeRatio)
+  });
   setKpiWithYearly(els.kpiCashflow, totals.cashflow);
   setKpiWithSideMeta(els.kpiAssets, totals.assets, [
     { label: "Asset goal", value: totals.goal, reached: totals.assets >= totals.goal },
     { label: "Asset prediction", value: totals.predikce, reached: totals.assets >= totals.predikce }
   ]);
   setKpiWithYearly(els.kpiPassiveCf, totals.passiveCf);
-  els.kpiInvestIncomeRatio.textContent = formatPercent(totals.investIncomeRatio);
   els.kpiFreeCash.textContent = formatCurrency(totals.freeCash);
   setKpiWithSideMeta(els.kpiAssetChange, totals.assetChange, [
     { label: "Asset change goal", value: totals.assetGoal, reached: totals.assetChange >= totals.assetGoal },
@@ -585,9 +586,12 @@ function render() {
   renderIncomeChart();
 }
 
-function setKpiWithYearly(element, monthlyValue) {
+function setKpiWithYearly(element, monthlyValue, options = {}) {
   const yearlyValue = Number(monthlyValue || 0) * 12;
-  element.innerHTML = `${formatCurrency(monthlyValue)}<span class="kpi-yearly"><small>Yearly value</small><small>${formatCurrency(yearlyValue)}</small></span>`;
+  const subValueHtml = options.subValue
+    ? `<span class="kpi-subvalue"><small>${escapeHtml(options.subValueLabel || "")}</small><strong>${escapeHtml(options.subValue)}</strong></span>`
+    : "";
+  element.innerHTML = `${formatCurrency(monthlyValue)}<span class="kpi-side-values">${subValueHtml}<span class="kpi-yearly"><small>Yearly value</small><small>${formatCurrency(yearlyValue)}</small></span></span>`;
 }
 
 function setKpiWithSideMeta(element, mainValue, rows) {

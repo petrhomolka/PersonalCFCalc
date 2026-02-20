@@ -138,13 +138,18 @@ body {
   margin: 0;
   font-size: 1.05rem;
   color: var(--accent2);
-  padding-right: 130px;
+  padding-right: 180px;
 }
 
-.kpi-grid p .kpi-yearly {
+.kpi-grid p .kpi-side-values {
   position: absolute;
   right: 12px;
   bottom: 12px;
+  text-align: right;
+  line-height: 1.2;
+}
+
+.kpi-grid p .kpi-yearly {
   color: var(--muted);
   text-align: right;
   line-height: 1.2;
@@ -155,10 +160,30 @@ body {
   font-size: 0.72rem;
 }
 
+.kpi-grid p .kpi-subvalue {
+  display: block;
+  margin-bottom: 4px;
+  text-align: right;
+  line-height: 1.2;
+}
+
+.kpi-grid p .kpi-subvalue small {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.kpi-grid p .kpi-subvalue strong {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--accent2);
+  font-weight: 600;
+}
+
 .kpi-grid p .kpi-side-meta {
   position: absolute;
   right: 12px;
-  top: 12px;
+  bottom: 12px;
   color: var(--muted);
   text-align: right;
   line-height: 1.2;
@@ -469,19 +494,9 @@ li small { color: var(--muted); }
   }
 
   .kpi-grid p {
-    padding-right: 0;
-    display: grid;
-    gap: 6px;
-  }
-
-  .kpi-grid p .kpi-yearly,
-  .kpi-grid p .kpi-side-meta {
-    position: static;
-    right: auto;
-    top: auto;
-    bottom: auto;
-    text-align: left;
-    line-height: 1.25;
+    padding-right: 130px;
+    display: block;
+    gap: 0;
   }
 
   #dashboard .card canvas {
