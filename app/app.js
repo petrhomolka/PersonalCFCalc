@@ -470,13 +470,18 @@ function startNextMonth() {
 
   ensureMonth(currentMonth);
   ensureMonth(nextMonth);
+  ensureGoalMonth(currentMonth);
+
+  const closedMonthTotals = getTotalsForMonth(currentMonth);
+  state.monthGoals[currentMonth].predikce = Number(closedMonthTotals.assets || 0);
+
   carryAllEntriesToNextMonth(currentMonth, nextMonth);
   carryAssetsToNextMonth(currentMonth, nextMonth);
 
   els.monthSelect.value = nextMonth;
   saveState();
   render();
-  setStatus(`Month ${nextMonth} created and all items carried from ${currentMonth}.`);
+  setStatus(`Month ${nextMonth} created, items carried from ${currentMonth}, and ${currentMonth} assets prediction set to achieved assets.`);
 }
 
 function carryAllEntriesToNextMonth(fromMonth, toMonth) {
