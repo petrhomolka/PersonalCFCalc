@@ -1,5 +1,62 @@
 const STORAGE_KEY = "pf_app_v1";
 const HISTORICAL_IMPORT_VERSION = 3;
+const DEFAULT_MAIN_CURRENCY = "CZK";
+const MAJOR_CRYPTO_CURRENCIES = [
+  "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "DOT", "LTC", "LINK",
+  "AVAX", "MATIC", "TRX", "BCH", "XLM", "ATOM", "UNI", "NEAR", "ETC", "ICP"
+];
+const CRYPTO_API_IDS = {
+  BTC: "bitcoin",
+  ETH: "ethereum",
+  SOL: "solana",
+  BNB: "binancecoin",
+  XRP: "ripple",
+  ADA: "cardano",
+  DOGE: "dogecoin",
+  DOT: "polkadot",
+  LTC: "litecoin",
+  LINK: "chainlink",
+  AVAX: "avalanche-2",
+  MATIC: "matic-network",
+  TRX: "tron",
+  BCH: "bitcoin-cash",
+  XLM: "stellar",
+  ATOM: "cosmos",
+  UNI: "uniswap",
+  NEAR: "near",
+  ETC: "ethereum-classic",
+  ICP: "internet-computer"
+};
+const FIAT_CURRENCIES = typeof Intl.supportedValuesOf === "function"
+  ? Intl.supportedValuesOf("currency")
+  : ["CZK", "USD", "EUR", "GBP", "CHF", "JPY", "AUD", "CAD", "NOK", "SEK", "PLN", "HUF"];
+const SUPPORTED_CURRENCIES = Array.from(new Set([...FIAT_CURRENCIES, ...MAJOR_CRYPTO_CURRENCIES])).sort();
+const DEFAULT_FAVORITE_CURRENCIES = ["CZK", "USD", "EUR", "BTC"];
+const DEFAULT_RATES_TO_CZK = {
+  CZK: 1,
+  USD: 23,
+  EUR: 25,
+  BTC: 2200000,
+  ETH: 120000,
+  SOL: 2500,
+  BNB: 13000,
+  XRP: 13,
+  ADA: 15,
+  DOGE: 3,
+  DOT: 160,
+  LTC: 1800,
+  LINK: 450,
+  AVAX: 900,
+  MATIC: 20,
+  TRX: 3,
+  BCH: 12000,
+  XLM: 3,
+  ATOM: 220,
+  UNI: 280,
+  NEAR: 140,
+  ETC: 650,
+  ICP: 260
+};
 
 function createId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
@@ -17,7 +74,13 @@ const initialState = {
   months: {},
   importedSummaries: {},
   monthGoals: {},
-  goalTimeline: []
+  goalTimeline: [],
+  settings: {
+    mainCurrency: DEFAULT_MAIN_CURRENCY,
+    favoriteCurrencies: DEFAULT_FAVORITE_CURRENCIES,
+    ratesToCzk: DEFAULT_RATES_TO_CZK,
+    ratesUpdatedAt: 0
+  }
 };
 
 const state = loadState();
@@ -29,6 +92,7 @@ const els = {
   panels: document.querySelectorAll(".panel"),
   monthSelect: document.getElementById("monthSelect"),
   startNextMonthBtn: document.getElementById("startNextMonthBtn"),
+  appCurrencySelect: document.getElementById("appCurrencySelect"),
   activeMonthLabel: document.getElementById("activeMonthLabel"),
   kpiIncome: document.getElementById("kpiIncome"),
   kpiExpense: document.getElementById("kpiExpense"),
@@ -55,7 +119,12 @@ const els = {
   assetForm: document.getElementById("assetForm"),
   assetName: document.getElementById("assetName"),
   assetValue: document.getElementById("assetValue"),
+  assetCurrency: document.getElementById("assetCurrency"),
   assetIsCash: document.getElementById("assetIsCash"),
+  manageFavoritesBtn: document.getElementById("manageFavoritesBtn"),
+  favoritesSummary: document.getElementById("favoritesSummary"),
+  refreshRatesBtn: document.getElementById("refreshRatesBtn"),
+  ratesStatus: document.getElementById("ratesStatus"),
   assetList: document.getElementById("assetList"),
   goalTableBody: document.getElementById("goalTableBody"),
   addYearBtn: document.getElementById("addYearBtn"),
@@ -93,8 +162,10 @@ async function boot() {
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   els.monthSelect.value = month;
 
+  ensureCurrencySettings();
   ensureMonth(els.monthSelect.value);
   ensureGoalTimeline();
+  initCurrencyUi();
   wireEvents();
   registerSW();
   await seedHistoricalDataIfEmpty();
@@ -156,6 +227,18 @@ function wireEvents() {
     render();
   });
 
+  if (els.appCurrencySelect) {
+    els.appCurrencySelect.addEventListener("change", onMainCurrencyChange);
+  }
+
+  if (els.manageFavoritesBtn) {
+    els.manageFavoritesBtn.addEventListener("click", onManageFavoritesClick);
+  }
+
+  if (els.refreshRatesBtn) {
+    els.refreshRatesBtn.addEventListener("click", refreshExchangeRates);
+  }
+
   if (els.startNextMonthBtn) {
     els.startNextMonthBtn.addEventListener("click", onStartNextMonthClick);
   }
@@ -185,9 +268,13 @@ function wireEvents() {
       month: els.monthSelect.value,
       name: els.assetName.value.trim(),
       value: Number(els.assetValue.value),
+      currency: els.assetCurrency ? els.assetCurrency.value : getMainCurrency(),
       isCash: Boolean(els.assetIsCash && els.assetIsCash.checked)
     });
     els.assetForm.reset();
+    if (els.assetCurrency) {
+      els.assetCurrency.value = getMainCurrency();
+    }
     render();
   });
 
@@ -270,13 +357,17 @@ function addEntry({ month, type, name, amount, periodic, category }) {
   saveState();
 }
 
-function addAsset({ month, name, value, isCash }) {
+function addAsset({ month, name, value, currency, isCash }) {
   if (!month || !name || Number.isNaN(value)) return;
   ensureMonth(month);
+  const normalizedCurrency = normalizeCurrencyCode(currency);
+  const convertedValue = convertAmountToMainCurrency(value, normalizedCurrency);
   state.months[month].assets.push({
     id: createId(),
     name,
-    value,
+    amount: value,
+    currency: normalizedCurrency,
+    value: convertedValue,
     isCash: Boolean(isCash),
     createdAt: Date.now()
   });
@@ -484,10 +575,15 @@ function carryAssetsToNextMonth(fromMonth, toMonth) {
     const sourceAssetKey = resolveSourceAssetId(item);
     if (existingKeys.has(sourceAssetKey)) return;
 
+    const amount = getAssetAmount(item);
+    const currency = getAssetCurrency(item);
+
     target.push({
       id: createId(),
       name: item.name,
-      value: Number(item.value) || 0,
+      amount,
+      currency,
+      value: convertAmountToMainCurrency(amount, currency),
       isCash: isCashAsset(item),
       carriedFrom: fromMonth,
       sourceAssetId: sourceAssetKey,
@@ -680,6 +776,298 @@ function onEntryTypeChange() {
   }
 }
 
+function ensureCurrencySettings() {
+  if (!state.settings || typeof state.settings !== "object") {
+    state.settings = {};
+  }
+
+  state.settings.mainCurrency = normalizeCurrencyCode(state.settings.mainCurrency || DEFAULT_MAIN_CURRENCY);
+  const favoriteSource = Array.isArray(state.settings.favoriteCurrencies)
+    ? state.settings.favoriteCurrencies
+    : DEFAULT_FAVORITE_CURRENCIES;
+  state.settings.favoriteCurrencies = Array.from(new Set(favoriteSource.map(normalizeCurrencyCode)))
+    .filter((code) => SUPPORTED_CURRENCIES.includes(code));
+
+  if (!state.settings.favoriteCurrencies.length) {
+    state.settings.favoriteCurrencies = DEFAULT_FAVORITE_CURRENCIES.slice();
+  }
+
+  state.settings.ratesToCzk = {
+    ...DEFAULT_RATES_TO_CZK,
+    ...(state.settings.ratesToCzk || {})
+  };
+
+  state.settings.ratesUpdatedAt = Number(state.settings.ratesUpdatedAt || 0);
+}
+
+function initCurrencyUi() {
+  renderCurrencySelectors();
+  renderFavoriteCurrencies();
+  updateRatesStatus();
+}
+
+function onMainCurrencyChange() {
+  if (!els.appCurrencySelect) return;
+  state.settings.mainCurrency = normalizeCurrencyCode(els.appCurrencySelect.value);
+  saveState();
+  renderCurrencySelectors();
+  render();
+}
+
+async function onManageFavoritesClick() {
+  const selected = await showFavoriteCurrenciesModal(state.settings.favoriteCurrencies || []);
+  if (!selected) return;
+
+  const fallback = selected.length ? selected : [getMainCurrency()];
+  state.settings.favoriteCurrencies = Array.from(new Set(fallback.map(normalizeCurrencyCode)));
+  saveState();
+  renderCurrencySelectors();
+  renderFavoriteCurrencies();
+}
+
+function renderCurrencySelectors() {
+  const options = getCurrencySelectOptions();
+
+  if (els.appCurrencySelect) {
+    els.appCurrencySelect.innerHTML = "";
+    options.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.value;
+      option.textContent = item.label;
+      els.appCurrencySelect.appendChild(option);
+    });
+    els.appCurrencySelect.value = getMainCurrency();
+  }
+
+  if (els.assetCurrency) {
+    const current = normalizeCurrencyCode(els.assetCurrency.value || getMainCurrency());
+    els.assetCurrency.innerHTML = "";
+    options.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.value;
+      option.textContent = item.label;
+      els.assetCurrency.appendChild(option);
+    });
+    els.assetCurrency.value = SUPPORTED_CURRENCIES.includes(current) ? current : getMainCurrency();
+  }
+}
+
+function renderFavoriteCurrencies() {
+  if (!els.favoritesSummary) return;
+  const selected = state.settings.favoriteCurrencies || [];
+  if (!selected.length) {
+    els.favoritesSummary.textContent = "No favorites selected";
+    return;
+  }
+
+  const preview = selected.slice(0, 6).join(", ");
+  const suffix = selected.length > 6 ? ` +${selected.length - 6}` : "";
+  els.favoritesSummary.textContent = `${preview}${suffix}`;
+}
+
+function showFavoriteCurrenciesModal(initialSelection) {
+  return new Promise((resolve) => {
+    const selected = new Set((initialSelection || []).map(normalizeCurrencyCode));
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("form");
+    modal.className = "modal-card";
+    modal.noValidate = true;
+
+    const titleEl = document.createElement("h3");
+    titleEl.textContent = "Favorite currencies";
+    modal.appendChild(titleEl);
+
+    const info = document.createElement("small");
+    info.textContent = "Choose favorites (used at top of currency selectors).";
+    modal.appendChild(info);
+
+    const search = document.createElement("input");
+    search.type = "text";
+    search.placeholder = "Search currency...";
+    modal.appendChild(search);
+
+    const listWrap = document.createElement("div");
+    listWrap.className = "currency-picker-grid";
+    modal.appendChild(listWrap);
+
+    const renderItems = () => {
+      const query = String(search.value || "").trim().toLowerCase();
+      listWrap.innerHTML = "";
+
+      const filtered = (codes) => codes.filter((code) => !query || code.toLowerCase().includes(query));
+      const favoriteCodes = filtered(state.settings.favoriteCurrencies || []);
+      const cryptoCodes = filtered(MAJOR_CRYPTO_CURRENCIES);
+      const cryptoSet = new Set(MAJOR_CRYPTO_CURRENCIES);
+      const fiatCodes = filtered(SUPPORTED_CURRENCIES.filter((code) => !cryptoSet.has(code)));
+
+      const appendGroup = (title, codes) => {
+        if (!codes.length) return;
+
+        const groupTitle = document.createElement("div");
+        groupTitle.className = "currency-picker-group-title";
+        groupTitle.textContent = title;
+        listWrap.appendChild(groupTitle);
+
+        codes.forEach((code) => {
+          const label = document.createElement("label");
+          label.className = "inline compact-inline currency-picker-item";
+
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.value = code;
+          input.checked = selected.has(code);
+          input.addEventListener("change", () => {
+            if (input.checked) selected.add(code);
+            else selected.delete(code);
+          });
+
+          label.appendChild(input);
+          label.append(` ${code}`);
+          listWrap.appendChild(label);
+        });
+      };
+
+      appendGroup("Favorites", favoriteCodes);
+      appendGroup("Fiat", fiatCodes);
+      appendGroup("Crypto", cryptoCodes);
+
+      if (!listWrap.children.length) {
+        const empty = document.createElement("small");
+        empty.className = "currency-picker-empty";
+        empty.textContent = "No currencies found.";
+        listWrap.appendChild(empty);
+      }
+    };
+
+    search.addEventListener("input", renderItems);
+    renderItems();
+
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "danger";
+    cancelBtn.textContent = "Cancel";
+
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "submit";
+    saveBtn.textContent = "Save";
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    const closeWith = (value) => {
+      backdrop.remove();
+      resolve(value);
+    };
+
+    cancelBtn.addEventListener("click", () => closeWith(null));
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) closeWith(null);
+    });
+    modal.addEventListener("submit", (event) => {
+      event.preventDefault();
+      closeWith(Array.from(selected));
+    });
+
+    search.focus();
+  });
+}
+
+function getCurrencySelectOptions() {
+  const favorites = new Set(state.settings.favoriteCurrencies || []);
+  const ordered = [];
+
+  (state.settings.favoriteCurrencies || []).forEach((code) => {
+    if (SUPPORTED_CURRENCIES.includes(code) && !ordered.includes(code)) ordered.push(code);
+  });
+
+  SUPPORTED_CURRENCIES.forEach((code) => {
+    if (!ordered.includes(code)) ordered.push(code);
+  });
+
+  return ordered.map((code) => ({
+    value: code,
+    label: favorites.has(code) ? `${code} ★` : code
+  }));
+}
+
+async function refreshExchangeRates() {
+  if (els.refreshRatesBtn) els.refreshRatesBtn.disabled = true;
+  try {
+    const [fiatResponse, cryptoResponse] = await Promise.all([
+      fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" }),
+      fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${Object.values(CRYPTO_API_IDS).join(",")}&vs_currencies=czk`, { cache: "no-store" })
+    ]);
+
+    if (!fiatResponse.ok || !cryptoResponse.ok) {
+      throw new Error("Rate API error");
+    }
+
+    const fiatJson = await fiatResponse.json();
+    const cryptoJson = await cryptoResponse.json();
+    const fiatRates = fiatJson && fiatJson.rates ? fiatJson.rates : null;
+
+    if (!fiatRates || !fiatRates.CZK || !fiatRates.USD) {
+      throw new Error("Missing FX rates");
+    }
+
+    const usdToCzk = Number(fiatRates.CZK);
+    const newRates = {
+      ...state.settings.ratesToCzk,
+      CZK: 1,
+      USD: usdToCzk
+    };
+
+    FIAT_CURRENCIES.forEach((code) => {
+      if (code === "CZK") {
+        newRates.CZK = 1;
+        return;
+      }
+      const usdToCurrency = Number(fiatRates[code]);
+      if (!Number.isFinite(usdToCurrency) || usdToCurrency <= 0) return;
+      newRates[code] = usdToCzk / usdToCurrency;
+    });
+
+    Object.entries(CRYPTO_API_IDS).forEach(([code, id]) => {
+      const czk = Number(cryptoJson?.[id]?.czk);
+      if (Number.isFinite(czk) && czk > 0) {
+        newRates[code] = czk;
+      }
+    });
+
+    state.settings.ratesToCzk = newRates;
+    state.settings.ratesUpdatedAt = Date.now();
+
+    saveState();
+    updateRatesStatus("Rates updated.");
+    render();
+  } catch {
+    updateRatesStatus("Rate refresh failed. Using saved rates.");
+  } finally {
+    if (els.refreshRatesBtn) els.refreshRatesBtn.disabled = false;
+  }
+}
+
+function updateRatesStatus(prefix = "") {
+  if (!els.ratesStatus) return;
+  const updatedAt = Number(state.settings.ratesUpdatedAt || 0);
+  if (!updatedAt) {
+    els.ratesStatus.textContent = prefix || "Using default rates.";
+    return;
+  }
+
+  const timeText = new Date(updatedAt).toLocaleString("cs-CZ");
+  els.ratesStatus.textContent = `${prefix ? `${prefix} ` : ""}Last update: ${timeText}`;
+}
+
 function renderAssetList(listEl, month, items) {
   listEl.innerHTML = "";
   if (!items.length) {
@@ -692,10 +1080,17 @@ function renderAssetList(listEl, month, items) {
   items.forEach((item) => {
     const li = document.createElement("li");
     const cashTag = isCashAsset(item) ? '<small>(cash)</small>' : "";
+    const assetCurrency = getAssetCurrency(item);
+    const assetAmount = getAssetAmount(item);
+    const converted = getAssetValueInMainCurrency(item);
+    const originalLine = assetCurrency === getMainCurrency()
+      ? ""
+      : `<small>${formatCurrency(assetAmount, assetCurrency)}</small>`;
     li.innerHTML = `
       <span>${escapeHtml(item.name)} ${cashTag}</span>
       <span class="row-actions">
-        <strong>${formatCurrency(item.value || 0)}</strong>
+        <strong>${formatCurrency(converted)}</strong>
+        ${originalLine}
         <button data-action="edit-asset" data-month="${month}" data-id="${item.id}" type="button">Upravit</button>
         <button data-action="delete-asset" data-month="${month}" data-id="${item.id}" type="button" class="danger">Smazat</button>
       </span>
@@ -800,7 +1195,14 @@ async function editAsset(month, id) {
     title: "Upravit asset",
     fields: [
       { key: "name", label: "Název asset", type: "text", value: item.name || "", required: true },
-      { key: "value", label: "Hodnota (Kč)", type: "number", value: String(item.value ?? ""), required: true },
+      { key: "value", label: "Amount", type: "number", value: String(getAssetAmount(item) ?? ""), required: true },
+      {
+        key: "currency",
+        label: "Měna",
+        type: "select",
+        value: getAssetCurrency(item),
+        options: getCurrencySelectOptions()
+      },
       { key: "isCash", label: "Cash asset", type: "checkbox", value: isCashAsset(item) }
     ],
     submitText: "Uložit"
@@ -809,10 +1211,13 @@ async function editAsset(month, id) {
 
   const name = String(edited.name || "").trim();
   const value = Number(edited.value);
+  const currency = normalizeCurrencyCode(edited.currency);
   if (!name || Number.isNaN(value)) return;
 
   item.name = name;
-  item.value = value;
+  item.amount = value;
+  item.currency = currency;
+  item.value = convertAmountToMainCurrency(value, currency);
   item.isCash = Boolean(edited.isCash);
   item.updatedAt = Date.now();
 
@@ -838,19 +1243,32 @@ function showEditModal({ title, fields, submitText = "Save" }) {
       row.className = field.type === "checkbox" ? "inline" : "stack";
       row.textContent = field.label;
 
-      const input = document.createElement("input");
-      input.name = field.key;
-      input.type = field.type === "number" ? "number" : field.type === "checkbox" ? "checkbox" : "text";
-      if (input.type === "number") input.step = "0.01";
-
-      if (input.type === "checkbox") {
-        input.checked = Boolean(field.value);
+      if (field.type === "select") {
+        const select = document.createElement("select");
+        select.name = field.key;
+        (field.options || []).forEach((optionData) => {
+          const option = document.createElement("option");
+          option.value = optionData.value;
+          option.textContent = optionData.label;
+          select.appendChild(option);
+        });
+        select.value = String(field.value || "");
+        row.appendChild(select);
       } else {
-        input.value = String(field.value || "");
-      }
+        const input = document.createElement("input");
+        input.name = field.key;
+        input.type = field.type === "number" ? "number" : field.type === "checkbox" ? "checkbox" : "text";
+        if (input.type === "number") input.step = "0.01";
 
-      if (field.required) input.required = true;
-      row.appendChild(input);
+        if (input.type === "checkbox") {
+          input.checked = Boolean(field.value);
+        } else {
+          input.value = String(field.value || "");
+        }
+
+        if (field.required) input.required = true;
+        row.appendChild(input);
+      }
       modal.appendChild(row);
     });
 
@@ -886,9 +1304,14 @@ function showEditModal({ title, fields, submitText = "Save" }) {
       event.preventDefault();
       const payload = {};
       fields.forEach((field) => {
-        const input = modal.elements.namedItem(field.key);
-        if (!(input instanceof HTMLInputElement)) return;
-        payload[field.key] = input.type === "checkbox" ? input.checked : input.value;
+        const control = modal.elements.namedItem(field.key);
+        if (control instanceof HTMLInputElement) {
+          payload[field.key] = control.type === "checkbox" ? control.checked : control.value;
+          return;
+        }
+        if (control instanceof HTMLSelectElement) {
+          payload[field.key] = control.value;
+        }
       });
       closeWith(payload);
     });
@@ -1050,19 +1473,32 @@ function getTotalsForMonth(month) {
   const localIncome = sumBy(monthData.income, "amount");
   const localExpense = sumBy(monthData.expense, "amount");
   const localInvestment = sumBy(monthData.investment, "amount");
-  const localAssets = sumBy(monthData.assets, "value");
+  const localAssets = (monthData.assets || []).reduce((sum, item) => sum + getAssetValueInMainCurrency(item), 0);
   const localFreeCash = monthData.assets
     .filter((item) => isCashAsset(item))
-    .reduce((sum, item) => sum + (Number(item.value) || 0), 0);
+    .reduce((sum, item) => sum + getAssetValueInMainCurrency(item), 0);
 
   const imported = state.importedSummaries[month] || {};
   ensureGoalMonth(month);
   const monthGoal = state.monthGoals[month] || {};
 
-  const income = localIncome || imported.income || 0;
-  const expense = localExpense || imported.expense || 0;
-  const investment = localInvestment || imported.investment || 0;
-  const assets = localAssets || imported.assets || 0;
+  const importedIncome = convertAmountToMainCurrency(imported.income || 0, "CZK");
+  const importedExpense = convertAmountToMainCurrency(imported.expense || 0, "CZK");
+  const importedInvestment = convertAmountToMainCurrency(imported.investment || 0, "CZK");
+  const importedAssets = convertAmountToMainCurrency(imported.assets || 0, "CZK");
+  const importedGoal = convertAmountToMainCurrency(imported.goal || 0, "CZK");
+  const importedPredikce = convertAmountToMainCurrency(imported.predikce || 0, "CZK");
+  const importedAssetChange = convertAmountToMainCurrency(imported.assetChange || 0, "CZK");
+  const importedAssetGoal = convertAmountToMainCurrency(imported.assetGoal || 0, "CZK");
+  const importedAssetPrediction = convertAmountToMainCurrency(imported.assetPrediction || 0, "CZK");
+  const importedFreeCash = convertAmountToMainCurrency(imported.freeCash || 0, "CZK");
+  const importedPassiveCf = convertAmountToMainCurrency(imported.passiveCf || 0, "CZK");
+  const importedPassiveIncome = convertAmountToMainCurrency(imported.passiveIncome || 0, "CZK");
+
+  const income = localIncome || importedIncome || 0;
+  const expense = localExpense || importedExpense || 0;
+  const investment = localInvestment || importedInvestment || 0;
+  const assets = localAssets || importedAssets || 0;
 
   return {
     income,
@@ -1070,15 +1506,15 @@ function getTotalsForMonth(month) {
     investment,
     assets,
     cashflow: income - expense,
-    realita: imported.realita || 0,
-    goal: Number(monthGoal.goal || imported.goal || 0),
-    predikce: Number(monthGoal.predikce || imported.predikce || 0),
-    assetChange: imported.assetChange || 0,
-    assetGoal: Number(monthGoal.assetGoal || imported.assetGoal || 0),
-    assetPrediction: Number(monthGoal.assetPrediction || imported.assetPrediction || 0),
-    freeCash: localFreeCash || imported.freeCash || 0,
-    passiveCf: imported.passiveCf || 0,
-    passiveIncome: imported.passiveIncome || 0,
+    realita: convertAmountToMainCurrency(imported.realita || 0, "CZK"),
+    goal: Number(monthGoal.goal || importedGoal || 0),
+    predikce: Number(monthGoal.predikce || importedPredikce || 0),
+    assetChange: importedAssetChange || 0,
+    assetGoal: Number(monthGoal.assetGoal || importedAssetGoal || 0),
+    assetPrediction: Number(monthGoal.assetPrediction || importedAssetPrediction || 0),
+    freeCash: localFreeCash || importedFreeCash || 0,
+    passiveCf: importedPassiveCf || 0,
+    passiveIncome: importedPassiveIncome || 0,
     investIncomeRatio: imported.investIncomeRatio || 0
   };
 }
@@ -1363,6 +1799,8 @@ function upsertImportedAsset(list, name, value, isCash = false) {
   if (!Number.isFinite(value)) return;
   const existing = list.find((item) => item.source === "imported-csv-summary" && item.name === name);
   if (existing) {
+    existing.amount = value;
+    existing.currency = "CZK";
     existing.value = value;
     existing.isCash = Boolean(isCash);
     existing.updatedAt = Date.now();
@@ -1372,6 +1810,8 @@ function upsertImportedAsset(list, name, value, isCash = false) {
   list.push({
     id: createId(),
     name,
+    amount: value,
+    currency: "CZK",
     value,
     isCash: Boolean(isCash),
     source: "imported-csv-summary",
@@ -1440,6 +1880,57 @@ function normalizeExpenseCategory(value) {
   return String(value || "").trim();
 }
 
+function normalizeCurrencyCode(value) {
+  const code = String(value || "").trim().toUpperCase();
+  return SUPPORTED_CURRENCIES.includes(code) ? code : DEFAULT_MAIN_CURRENCY;
+}
+
+function getMainCurrency() {
+  return normalizeCurrencyCode(state.settings && state.settings.mainCurrency);
+}
+
+function getRateToCzk(currencyCode) {
+  const code = normalizeCurrencyCode(currencyCode);
+  const rates = (state.settings && state.settings.ratesToCzk) || DEFAULT_RATES_TO_CZK;
+  const rate = Number(rates[code]);
+  if (Number.isFinite(rate) && rate > 0) return rate;
+  const fallback = Number(DEFAULT_RATES_TO_CZK[code]);
+  if (Number.isFinite(fallback) && fallback > 0) return fallback;
+  return null;
+}
+
+function convertAmountToMainCurrency(amount, fromCurrency) {
+  const value = Number(amount || 0);
+  if (!Number.isFinite(value)) return 0;
+  const sourceCurrency = normalizeCurrencyCode(fromCurrency);
+  const mainCurrency = getMainCurrency();
+  if (sourceCurrency === mainCurrency) return value;
+
+  const sourceRate = getRateToCzk(sourceCurrency);
+  const targetRate = getRateToCzk(mainCurrency);
+  if (!sourceRate || !targetRate) return value;
+
+  const czkValue = value * sourceRate;
+  return czkValue / targetRate;
+}
+
+function getAssetCurrency(asset) {
+  return normalizeCurrencyCode(asset && asset.currency ? asset.currency : "CZK");
+}
+
+function getAssetAmount(asset) {
+  if (!asset) return 0;
+  const amount = Number(asset.amount);
+  if (Number.isFinite(amount)) return amount;
+  const legacy = Number(asset.value);
+  return Number.isFinite(legacy) ? legacy : 0;
+}
+
+function getAssetValueInMainCurrency(asset) {
+  if (!asset) return 0;
+  return convertAmountToMainCurrency(getAssetAmount(asset), getAssetCurrency(asset));
+}
+
 function resolveSourceEntryId(item) {
   return item && (item.sourceEntryId || item.id) ? String(item.sourceEntryId || item.id) : createId();
 }
@@ -1494,13 +1985,25 @@ function loadState() {
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return cloneState(initialState);
+    const settings = parsed.settings && typeof parsed.settings === "object" ? parsed.settings : {};
     return {
       version: 1,
       historicalImportVersion: Number(parsed.historicalImportVersion || 0),
       months: parsed.months && typeof parsed.months === "object" ? parsed.months : {},
       importedSummaries: parsed.importedSummaries && typeof parsed.importedSummaries === "object" ? parsed.importedSummaries : {},
       monthGoals: parsed.monthGoals && typeof parsed.monthGoals === "object" ? parsed.monthGoals : {},
-      goalTimeline: Array.isArray(parsed.goalTimeline) ? parsed.goalTimeline : []
+      goalTimeline: Array.isArray(parsed.goalTimeline) ? parsed.goalTimeline : [],
+      settings: {
+        mainCurrency: normalizeCurrencyCode(settings.mainCurrency || DEFAULT_MAIN_CURRENCY),
+        favoriteCurrencies: Array.isArray(settings.favoriteCurrencies)
+          ? settings.favoriteCurrencies.map(normalizeCurrencyCode)
+          : DEFAULT_FAVORITE_CURRENCIES,
+        ratesToCzk: {
+          ...DEFAULT_RATES_TO_CZK,
+          ...(settings.ratesToCzk || {})
+        },
+        ratesUpdatedAt: Number(settings.ratesUpdatedAt || 0)
+      }
     };
   } catch {
     return cloneState(initialState);
@@ -1519,8 +2022,22 @@ function setStatus(message) {
   els.status.textContent = message;
 }
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(value || 0);
+function formatCurrency(value, currency = getMainCurrency()) {
+  const numeric = Number(value || 0);
+  const normalizedCurrency = normalizeCurrencyCode(currency);
+  const maxDigits = normalizedCurrency === "BTC" || normalizedCurrency === "ETH" ? 6 : 2;
+  const minDigits = normalizedCurrency === "BTC" || normalizedCurrency === "ETH" ? 2 : 0;
+
+  try {
+    return new Intl.NumberFormat("cs-CZ", {
+      style: "currency",
+      currency: normalizedCurrency,
+      maximumFractionDigits: maxDigits,
+      minimumFractionDigits: minDigits
+    }).format(numeric);
+  } catch {
+    return `${numeric.toFixed(maxDigits)} ${normalizedCurrency}`;
+  }
 }
 
 function formatPercent(value) {

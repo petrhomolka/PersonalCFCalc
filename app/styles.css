@@ -34,6 +34,22 @@ body {
   margin: 6px 0;
 }
 
+.topbar-controls {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.compact-inline {
+  font-size: 0.8rem;
+  gap: 6px;
+}
+
+.compact-inline select,
+.compact-inline input {
+  padding: 6px 8px;
+}
+
 .month-chip {
   font-size: 0.85rem;
   color: var(--muted);
@@ -120,6 +136,25 @@ label {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.asset-tools {
+  margin-top: 10px;
+  border-top: 1px solid #1e2a40;
+  padding-top: 10px;
+}
+
+.favorites-row {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+#favoritesSummary {
+  color: var(--muted);
+}
+
+#ratesStatus {
+  color: var(--muted);
 }
 
 input, select, button {
@@ -370,4 +405,42 @@ li small { color: var(--muted); }
 
 .modal-card h3 {
   margin: 0 0 2px;
+}
+
+.currency-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  max-height: 44vh;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid #20304b;
+  border-radius: 10px;
+}
+
+.currency-picker-item {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.currency-picker-group-title {
+  grid-column: 1 / -1;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #20304b;
+}
+
+.currency-picker-group-title:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.currency-picker-empty {
+  grid-column: 1 / -1;
+  color: var(--muted);
 }
