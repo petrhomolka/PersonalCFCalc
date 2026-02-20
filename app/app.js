@@ -1,7 +1,9 @@
 const STORAGE_KEY = "pf_app_v1";
+const HISTORICAL_IMPORT_VERSION = 2;
 
 const initialState = {
   version: 1,
+  historicalImportVersion: 0,
   goals: [],
   months: {},
   importedSummaries: {}
@@ -48,13 +50,14 @@ const els = {
   exportJsonBtn: document.getElementById("exportJsonBtn"),
   importJsonInput: document.getElementById("importJsonInput"),
   importCsvInput: document.getElementById("importCsvInput"),
+  reimportHistoricalBtn: document.getElementById("reimportHistoricalBtn"),
   resetBtn: document.getElementById("resetBtn"),
   status: document.getElementById("status")
 };
 
 boot();
 
-function boot() {
+async function boot() {
   const now = new Date();
   const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   els.monthSelect.value = month;
@@ -62,7 +65,56 @@ function boot() {
   ensureMonth(els.monthSelect.value);
   wireEvents();
   registerSW();
+  await seedHistoricalDataIfEmpty();
   render();
+}
+
+async function seedHistoricalDataIfEmpty() {
+  if (!shouldSeedHistoricalData()) return;
+
+  try {
+    const response = await fetch("./assets/historical.csv", { cache: "no-store" });
+    if (!response.ok) return;
+    const text = await response.text();
+    const rows = parseCsv(text);
+    if (rows.length < 2) return;
+
+    clearImportedSummaryData();
+    const parsedCount = hydrateFromSheetRows(rows);
+    if (parsedCount > 0) {
+      state.historicalImportVersion = HISTORICAL_IMPORT_VERSION;
+      saveState();
+      setStatus(`Historická data automaticky importována (${parsedCount} měsíců).`);
+    } else {
+      setStatus("Historický CSV nalezen, ale nepodařilo se z něj načíst měsíce.");
+    }
+  } catch {
+    setStatus("Automatický import historických dat se nepovedl (spusť app přes http server nebo importuj CSV ručně v Data).\n");
+  }
+}
+
+function shouldSeedHistoricalData() {
+  if (Number(state.historicalImportVersion || 0) < HISTORICAL_IMPORT_VERSION) return true;
+
+  const summaries = state.importedSummaries || {};
+  const months = Object.keys(summaries);
+  if (months.length === 0) return true;
+
+  const likelyOldBrokenMapping = months.length >= 6 && months.filter((month) => {
+    const row = summaries[month] || {};
+    const income = Number(row.income || 0);
+    const ratio = Number(row.investIncomeRatio || 0);
+    return income > 0 && income < 1000 && ratio > 100;
+  }).length >= Math.ceil(months.length * 0.4);
+
+  if (likelyOldBrokenMapping) return true;
+
+  const hasAnyValue = months.some((month) => {
+    const row = summaries[month] || {};
+    return Object.values(row).some((value) => Number(value) !== 0);
+  });
+
+  return !hasAnyValue;
 }
 
 function wireEvents() {
@@ -112,11 +164,49 @@ function wireEvents() {
   els.exportJsonBtn.addEventListener("click", exportJson);
   els.importJsonInput.addEventListener("change", importJson);
   els.importCsvInput.addEventListener("change", importCsvSheet);
+  els.reimportHistoricalBtn.addEventListener("click", reimportHistoricalData);
 
   els.resetBtn.addEventListener("click", () => {
     if (!confirm("Opravdu smazat všechna lokální data?")) return;
     localStorage.removeItem(STORAGE_KEY);
     location.reload();
+  });
+}
+
+async function reimportHistoricalData() {
+  try {
+    const response = await fetch("./assets/historical.csv", { cache: "no-store" });
+    if (!response.ok) {
+      setStatus("Nelze načíst vestavěný historical.csv.");
+      return;
+    }
+    const text = await response.text();
+    const rows = parseCsv(text);
+    if (rows.length < 2) {
+      setStatus("Vestavěný historical.csv je prázdný.");
+      return;
+    }
+
+    clearImportedSummaryData();
+    const parsedCount = hydrateFromSheetRows(rows);
+    state.historicalImportVersion = HISTORICAL_IMPORT_VERSION;
+    saveState();
+    render();
+    setStatus(`Historická data re-importována (${parsedCount} měsíců).`);
+  } catch {
+    setStatus("Re-import historických dat se nepovedl.");
+  }
+}
+
+function clearImportedSummaryData() {
+  state.importedSummaries = {};
+
+  Object.values(state.months).forEach((monthData) => {
+    if (!monthData) return;
+    monthData.income = (monthData.income || []).filter((item) => item.source !== "imported-csv-summary");
+    monthData.expense = (monthData.expense || []).filter((item) => item.source !== "imported-csv-summary");
+    monthData.investment = (monthData.investment || []).filter((item) => item.source !== "imported-csv-summary");
+    monthData.assets = (monthData.assets || []).filter((item) => item.source !== "imported-csv-summary");
   });
 }
 
@@ -618,9 +708,14 @@ async function importCsvSheet(event) {
     if (rows.length < 2) throw new Error("CSV bez dat");
 
     const parsedCount = hydrateFromSheetRows(rows);
+    state.historicalImportVersion = HISTORICAL_IMPORT_VERSION;
     saveState();
     render();
-    setStatus(`CSV import hotový. Nalezeno měsíců: ${parsedCount}.`);
+    if (parsedCount > 0) {
+      setStatus(`CSV import hotový. Nalezeno měsíců: ${parsedCount}.`);
+    } else {
+      setStatus("CSV načten, ale nebyly rozpoznány měsíce (zkontroluj formát sloupce měsíc).\n");
+    }
   } catch {
     setStatus("Chyba při importu CSV.");
   } finally {
@@ -633,23 +728,27 @@ function hydrateFromSheetRows(rows) {
 
   for (let index = 1; index < rows.length; index += 1) {
     const row = rows[index];
-    const rawMonth = (row[15] || "").trim();
+    const monthIndex = row.findIndex((value) => /^\d{1,2}\/\d{4}$/.test((value || "").trim()));
+    if (monthIndex < 0) continue;
+
+    const rawMonth = (row[monthIndex] || "").trim();
     const month = parseMonth(rawMonth);
     if (!month) continue;
 
-    const realita = parseMoney(row[16]);
-    const goal = parseMoney(row[17]);
-    const predikce = parseMoney(row[19]);
-    const assetChange = parseMoney(row[20]);
-    const assetGoal = parseMoney(row[21]);
-    const assetPrediction = parseMoney(row[22]);
-    const passiveCf = parseMoney(row[24]);
-    const passiveIncome = parseMoney(row[25]);
-    const investIncomeRatio = parsePercent(row[26]);
-    const income = parseMoney(row[27]);
-    const expense = parseMoney(row[28]);
-    const investment = parseMoney(row[29]);
-    const cashFlow = parseMoney(row[30]);
+    const realita = parseMoney(row[monthIndex + 1]);
+    const goal = parseMoney(row[monthIndex + 2]);
+    const notes = (row[monthIndex + 3] || "").trim();
+    const predikce = parseMoney(row[monthIndex + 4]);
+    const assetChange = parseMoney(row[monthIndex + 6]);
+    const assetGoal = parseMoney(row[monthIndex + 7]);
+    const assetPrediction = parseMoney(row[monthIndex + 8]);
+    const passiveCf = parseMoney(row[monthIndex + 10]);
+    const passiveIncome = parseMoney(row[monthIndex + 11]);
+    const investIncomeRatio = parsePercent(row[monthIndex + 12]);
+    const income = parseMoney(row[monthIndex + 13]);
+    const expense = parseMoney(row[monthIndex + 14]);
+    const investment = parseMoney(row[monthIndex + 15]);
+    const cashFlow = parseMoney(row[monthIndex + 16]);
     const assets = realita;
 
     state.importedSummaries[month] = {
@@ -662,6 +761,7 @@ function hydrateFromSheetRows(rows) {
       passiveCf,
       passiveIncome,
       investIncomeRatio,
+      notes,
       income,
       expense,
       investment,
@@ -671,6 +771,7 @@ function hydrateFromSheetRows(rows) {
     };
 
     ensureMonth(month);
+    upsertImportedMonthlyRows(month, state.importedSummaries[month]);
     count += 1;
   }
 
@@ -690,6 +791,58 @@ function hydrateFromSheetRows(rows) {
   }
 
   return count;
+}
+
+function upsertImportedMonthlyRows(month, summary) {
+  const monthData = state.months[month];
+  if (!monthData) return;
+
+  const passiveIncome = Number(summary.passiveIncome || 0);
+  const totalIncome = Number(summary.income || 0);
+  const mzda = totalIncome - passiveIncome;
+
+  upsertImportedEntry(monthData.income, "mzda", mzda);
+  upsertImportedEntry(monthData.income, "sporici ucet", passiveIncome);
+  upsertImportedEntry(monthData.expense, "Imported výdaje (CSV)", summary.expense);
+  upsertImportedEntry(monthData.investment, "Imported investice (CSV)", summary.investment);
+  upsertImportedAsset(monthData.assets, "Imported assets total (CSV)", summary.assets);
+}
+
+function upsertImportedEntry(list, name, amount) {
+  if (!Number.isFinite(amount)) return;
+  const existing = list.find((item) => item.source === "imported-csv-summary" && item.name === name);
+  if (existing) {
+    existing.amount = amount;
+    existing.updatedAt = Date.now();
+    return;
+  }
+
+  list.push({
+    id: crypto.randomUUID(),
+    name,
+    amount,
+    periodic: false,
+    source: "imported-csv-summary",
+    createdAt: Date.now()
+  });
+}
+
+function upsertImportedAsset(list, name, value) {
+  if (!Number.isFinite(value)) return;
+  const existing = list.find((item) => item.source === "imported-csv-summary" && item.name === name);
+  if (existing) {
+    existing.value = value;
+    existing.updatedAt = Date.now();
+    return;
+  }
+
+  list.push({
+    id: crypto.randomUUID(),
+    name,
+    value,
+    source: "imported-csv-summary",
+    createdAt: Date.now()
+  });
 }
 
 function parseCsv(text) {
@@ -748,14 +901,12 @@ function parseMonth(value) {
 
 function parseMoney(value) {
   if (!value) return 0;
-  const cleaned = String(value)
+  const normalized = String(value)
+    .replace(/\u00A0/g, " ")
     .replace(/\s/g, "")
-    .replace("Kč", "")
-    .replace("€", "")
-    .replace("$", "")
-    .replace(/,/g, "")
-    .trim();
+    .replace(/,/g, "");
 
+  const cleaned = normalized.replace(/[^0-9.\-]/g, "");
   const number = Number(cleaned);
   return Number.isFinite(number) ? number : 0;
 }
@@ -763,9 +914,10 @@ function parseMoney(value) {
 function parsePercent(value) {
   if (!value) return 0;
   const cleaned = String(value)
+    .replace(/\u00A0/g, " ")
     .replace(/\s/g, "")
-    .replace("%", "")
     .replace(/,/g, "")
+    .replace(/[^0-9.\-]/g, "")
     .trim();
   const number = Number(cleaned);
   return Number.isFinite(number) ? number : 0;
@@ -779,6 +931,7 @@ function loadState() {
     if (!parsed || typeof parsed !== "object") return structuredClone(initialState);
     return {
       version: 1,
+      historicalImportVersion: Number(parsed.historicalImportVersion || 0),
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       months: parsed.months && typeof parsed.months === "object" ? parsed.months : {},
       importedSummaries: parsed.importedSummaries && typeof parsed.importedSummaries === "object" ? parsed.importedSummaries : {}

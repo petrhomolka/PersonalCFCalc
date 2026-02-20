@@ -9,6 +9,7 @@
 - Dashboard se KPI + 4 grafy včetně makro metrik ze sheetu.
 - Import CSV (Google Sheet export) pro historické měsíční souhrny.
 - Export/Import JSON pro migraci na nový iPhone.
+- Při prvním spuštění se automaticky načte vestavěný soubor `app/assets/historical.csv` (pokud ještě nejsou importovaná historická data).
 
 ## Spuštění lokálně (Windows)
 V PowerShellu z kořene projektu:
