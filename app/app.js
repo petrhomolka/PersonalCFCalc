@@ -565,16 +565,20 @@ function render() {
     subValue: formatPercent(totals.investIncomeRatio)
   });
   setKpiWithYearly(els.kpiCashflow, totals.cashflow);
+  els.kpiCashflow.classList.toggle("kpi-negative", totals.cashflow < 0);
   setKpiWithSideMeta(els.kpiAssets, totals.assets, [
     { label: "Asset goal", value: totals.goal, reached: totals.assets >= totals.goal },
     { label: "Asset prediction", value: totals.predikce, reached: totals.assets >= totals.predikce }
   ]);
   setKpiWithYearly(els.kpiPassiveCf, totals.passiveCf);
+  els.kpiPassiveCf.classList.toggle("kpi-negative", totals.passiveCf < 0);
   els.kpiFreeCash.textContent = formatCurrency(totals.freeCash);
+  els.kpiFreeCash.classList.toggle("kpi-negative", totals.freeCash < 0);
   setKpiWithSideMeta(els.kpiAssetChange, totals.assetChange, [
     { label: "Asset change goal", value: totals.assetGoal, reached: totals.assetChange >= totals.assetGoal },
     { label: "Asset change prediction", value: totals.assetPrediction, reached: totals.assetChange >= totals.assetPrediction }
   ]);
+  els.kpiAssetChange.classList.toggle("kpi-negative", totals.assetChange < 0);
 
   renderLists(month);
   renderGoalsTable();

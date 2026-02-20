@@ -141,6 +141,10 @@ body {
   padding-right: 180px;
 }
 
+.kpi-grid p.kpi-negative {
+  color: var(--danger);
+}
+
 .kpi-grid p .kpi-side-values {
   position: absolute;
   right: 12px;
