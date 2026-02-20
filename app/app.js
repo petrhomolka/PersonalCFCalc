@@ -189,12 +189,12 @@ async function seedHistoricalDataIfEmpty() {
     if (parsedCount > 0) {
       state.historicalImportVersion = HISTORICAL_IMPORT_VERSION;
       saveState();
-      setStatus(`Historická data automaticky importována (${parsedCount} měsíců).`);
+      setStatus(`Historical data auto-imported (${parsedCount} months).`);
     } else {
-      setStatus("Historický CSV nalezen, ale nepodařilo se z něj načíst měsíce.");
+      setStatus("Historical CSV found, but months could not be parsed.");
     }
   } catch {
-    setStatus("Automatický import historických dat se nepovedl (spusť app přes http server nebo importuj CSV ručně v Data).\n");
+    setStatus("Automatic historical data import failed (run app via HTTP server or import CSV manually in Data).\n");
   }
 }
 
@@ -291,7 +291,7 @@ function wireEvents() {
   els.reimportHistoricalBtn.addEventListener("click", reimportHistoricalData);
 
   els.resetBtn.addEventListener("click", () => {
-    if (!confirm("Opravdu smazat všechna lokální data?")) return;
+    if (!confirm("Do you really want to delete all local data?")) return;
     localStorage.removeItem(STORAGE_KEY);
     location.reload();
   });
@@ -301,13 +301,13 @@ async function reimportHistoricalData() {
   try {
     const response = await fetch("./assets/historical.csv", { cache: "no-store" });
     if (!response.ok) {
-      setStatus("Nelze načíst vestavěný historical.csv.");
+      setStatus("Cannot load built-in historical.csv.");
       return;
     }
     const text = await response.text();
     const rows = parseCsv(text);
     if (rows.length < 2) {
-      setStatus("Vestavěný historical.csv je prázdný.");
+      setStatus("Built-in historical.csv is empty.");
       return;
     }
 
@@ -316,9 +316,9 @@ async function reimportHistoricalData() {
     state.historicalImportVersion = HISTORICAL_IMPORT_VERSION;
     saveState();
     render();
-    setStatus(`Historická data re-importována (${parsedCount} měsíců).`);
+    setStatus(`Historical data re-imported (${parsedCount} months).`);
   } catch {
-    setStatus("Re-import historických dat se nepovedl.");
+    setStatus("Historical data re-import failed.");
   }
 }
 
@@ -515,11 +515,11 @@ function startNextMonth() {
   const currentMonth = els.monthSelect.value;
   const nextMonth = getNextMonth(currentMonth);
   if (!nextMonth) {
-    setStatus("Nelze spočítat další měsíc.");
+    setStatus("Cannot compute next month.");
     return;
   }
 
-  const confirmed = confirm(`Přepnout na ${nextMonth} a přenést všechny položky z ${currentMonth}?`);
+  const confirmed = confirm(`Switch to ${nextMonth} and carry all items from ${currentMonth}?`);
   if (!confirmed) return;
 
   ensureMonth(currentMonth);
@@ -530,7 +530,7 @@ function startNextMonth() {
   els.monthSelect.value = nextMonth;
   saveState();
   render();
-  setStatus(`Vytvořen měsíc ${nextMonth} a všechny položky přeneseny z ${currentMonth}.`);
+  setStatus(`Month ${nextMonth} created and all items carried from ${currentMonth}.`);
 }
 
 function carryAllEntriesToNextMonth(fromMonth, toMonth) {
@@ -662,7 +662,7 @@ function renderEntryList(listEl, month, type, items) {
   listEl.innerHTML = "";
   if (!items.length) {
     const li = document.createElement("li");
-    li.innerHTML = "<small>Žádná data</small>";
+    li.innerHTML = "<small>No data</small>";
     listEl.appendChild(li);
     return;
   }
@@ -689,7 +689,7 @@ function renderEntryList(listEl, month, type, items) {
     const categoryLine = type === "expense" && normalizeExpenseCategory(item.category)
       ? `<small class="item-category-line">${escapeHtml(normalizeExpenseCategory(item.category))}</small>`
       : "";
-    const autoText = item.carriedFrom ? `<small class="item-auto-line">(auto z ${item.carriedFrom})</small>` : "";
+    const autoText = item.carriedFrom ? `<small class="item-auto-line">(auto from ${item.carriedFrom})</small>` : "";
     li.innerHTML = `
       <span class="entry-main">
         <span class="entry-name">${escapeHtml(item.name)}</span>
@@ -703,8 +703,8 @@ function renderEntryList(listEl, month, type, items) {
       <span class="entry-actions">
         <strong class="entry-amount">${formatCurrency(item.amount || 0)}</strong>
         <span class="entry-buttons">
-          <button data-action="edit-entry" data-month="${month}" data-type="${type}" data-id="${item.id}" type="button">Upravit</button>
-          <button data-action="delete-entry" data-month="${month}" data-type="${type}" data-id="${item.id}" type="button" class="danger">Smazat</button>
+          <button data-action="edit-entry" data-month="${month}" data-type="${type}" data-id="${item.id}" type="button">Edit</button>
+          <button data-action="delete-entry" data-month="${month}" data-type="${type}" data-id="${item.id}" type="button" class="danger">Delete</button>
         </span>
       </span>
     `;
@@ -714,7 +714,7 @@ function renderEntryList(listEl, month, type, items) {
   periodicItems.forEach(appendEntryRow);
 
   if (type === "expense") {
-    renderExpenseSummarySection(listEl, periodicItems, "Součet periodických výdajů", "periodic");
+    renderExpenseSummarySection(listEl, periodicItems, "Total periodic expenses", "periodic");
   }
 
   if (oneTimeItems.length) {
@@ -727,7 +727,7 @@ function renderEntryList(listEl, month, type, items) {
   oneTimeItems.forEach(appendEntryRow);
 
   if (type === "expense") {
-    renderExpenseSummarySection(listEl, items, "Celkem výdaje (vč. one-time)", "overall");
+    renderExpenseSummarySection(listEl, items, "Total expenses (incl. one-time)", "overall");
   }
 
   if (type === "investment") {
@@ -1142,7 +1142,7 @@ function renderAssetList(listEl, month, items) {
 
   if (!items.length) {
     const li = document.createElement("li");
-    li.innerHTML = "<small>Žádná data</small>";
+    li.innerHTML = "<small>No data</small>";
     listEl.appendChild(li);
     appendAssetSummaryRows(listEl, totalAssets, totalCashAssets);
     return;
@@ -1162,8 +1162,8 @@ function renderAssetList(listEl, month, items) {
       <span class="row-actions">
         <strong>${formatCurrency(converted)}</strong>
         ${originalLine}
-        <button data-action="edit-asset" data-month="${month}" data-id="${item.id}" type="button">Upravit</button>
-        <button data-action="delete-asset" data-month="${month}" data-id="${item.id}" type="button" class="danger">Smazat</button>
+        <button data-action="edit-asset" data-month="${month}" data-id="${item.id}" type="button">Edit</button>
+        <button data-action="delete-asset" data-month="${month}" data-id="${item.id}" type="button" class="danger">Delete</button>
       </span>
     `;
     listEl.appendChild(li);
@@ -1233,15 +1233,15 @@ async function editEntry(month, type, id) {
   if (!item) return;
 
   const fields = [
-    { key: "name", label: "Název", type: "text", value: item.name || "", required: true },
-    { key: "amount", label: "Částka (Kč)", type: "number", value: String(item.amount ?? ""), required: true },
+    { key: "name", label: "Name", type: "text", value: item.name || "", required: true },
+    { key: "amount", label: "Amount", type: "number", value: String(item.amount ?? ""), required: true },
     { key: "periodic", label: "Periodical", type: "checkbox", value: Boolean(item.periodic) }
   ];
 
   if (type === "expense") {
     fields.push({
       key: "category",
-      label: "Kategorie výdaje",
+      label: "Expense category",
       type: "text",
       value: normalizeExpenseCategory(item.category)
     });
@@ -1256,9 +1256,9 @@ async function editEntry(month, type, id) {
   }
 
   const edited = await showEditModal({
-    title: type === "expense" ? "Upravit výdaj" : type === "income" ? "Upravit příjem" : "Upravit investici",
+    title: type === "expense" ? "Edit expense" : type === "income" ? "Edit income" : "Edit investment",
     fields,
-    submitText: "Uložit"
+    submitText: "Save"
   });
   if (!edited) return;
 
@@ -1301,20 +1301,20 @@ async function editAsset(month, id) {
   if (!item) return;
 
   const edited = await showEditModal({
-    title: "Upravit asset",
+    title: "Edit asset",
     fields: [
-      { key: "name", label: "Název asset", type: "text", value: item.name || "", required: true },
+      { key: "name", label: "Asset name", type: "text", value: item.name || "", required: true },
       { key: "value", label: "Amount", type: "number", value: String(getAssetAmount(item) ?? ""), required: true, step: "0.0001" },
       {
         key: "currency",
-        label: "Měna",
+        label: "Currency",
         type: "select",
         value: getAssetCurrency(item),
         options: getCurrencySelectOptions()
       },
       { key: "isCash", label: "Cash asset", type: "checkbox", value: isCashAsset(item) }
     ],
-    submitText: "Uložit"
+    submitText: "Save"
   });
   if (!edited) return;
 
@@ -1573,7 +1573,7 @@ function removeLastFutureYearGoals() {
   const yearMonths = state.goalTimeline.filter((month) => Number(month.slice(0, 4)) === lastYear);
   const hasNonFuture = yearMonths.some((month) => month <= currentMonth);
   if (hasNonFuture) {
-    setStatus(`Rok ${lastYear} nelze smazat, protože už probíhá nebo je v minulosti.`);
+    setStatus(`Year ${lastYear} cannot be removed because it is current or past.`);
     return;
   }
 
@@ -1703,8 +1703,8 @@ function renderMacroChart() {
   const passiveIncomeUntilCurrent = maskValuesAfterCurrentMonth(labels, passiveIncome, currentMonth);
 
   drawLineChart(els.macroChart, labels, [
-    { name: "Pasivni CF", values: passiveCfUntilCurrent, color: "#3b82f6" },
-    { name: "Pasivni prijem", values: passiveIncomeUntilCurrent, color: "#ef4444" }
+    { name: "Passive CF", values: passiveCfUntilCurrent, color: "#3b82f6" },
+    { name: "Passive income", values: passiveIncomeUntilCurrent, color: "#ef4444" }
   ], {
     yAxisLabel: ""
   });
@@ -1787,7 +1787,7 @@ function renderIncomeChart() {
   const trendline = buildLinearTrendline(incomeUntilCurrent, labels.length);
 
   drawLineChart(els.incomeChart, labels, [
-    { name: "Prijem", values: incomeUntilCurrent, color: "#22c55e" },
+    { name: "Income", values: incomeUntilCurrent, color: "#22c55e" },
     { name: "Trendline", values: trendline, color: "#93c5fd" }
   ], {
     yAxisLabel: ""
@@ -2005,10 +2005,10 @@ function drawCashChart(canvas, labels, data) {
   });
 
   const legend = [
-    { label: "realita", color: "#3b82f6", box: true },
+    { label: "Actual", color: "#3b82f6", box: true },
     { label: "Trendline", color: "#93c5fd", box: false },
-    { label: "cil", color: "#ef4444", box: false },
-    { label: "predikce", color: "#f59e0b", box: false }
+    { label: "Goal", color: "#ef4444", box: false },
+    { label: "Prediction", color: "#f59e0b", box: false }
   ];
 
   ctx.textAlign = "left";
@@ -2088,7 +2088,7 @@ function drawLineChart(canvas, labels, series, options = {}) {
   const hasYAxisLabelOption = Object.prototype.hasOwnProperty.call(options, "yAxisLabel");
   const yAxisLabel = hasYAxisLabelOption
     ? String(options.yAxisLabel || "")
-    : `Hodnoty (${getMainCurrency()})`;
+    : `Values (${getMainCurrency()})`;
   const formatYAxisValue = (value) => {
     if (yAxisType === "percent") return `${Number(value).toFixed(2)} %`;
     return formatCurrency(value, getMainCurrency(), { minFractionDigits: 0, maxFractionDigits: 2 });
@@ -2200,7 +2200,7 @@ function exportJson() {
   anchor.download = `finance-backup-${new Date().toISOString().slice(0, 10)}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
-  setStatus("JSON export hotový.");
+  setStatus("JSON export completed.");
 }
 
 async function importJson(event) {
@@ -2209,12 +2209,12 @@ async function importJson(event) {
   try {
     const text = await file.text();
     const parsed = JSON.parse(text);
-    if (!parsed || typeof parsed !== "object" || !parsed.months) throw new Error("Neplatný soubor");
+    if (!parsed || typeof parsed !== "object" || !parsed.months) throw new Error("Invalid file");
     localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-    setStatus("JSON import hotový, načítám data...");
+    setStatus("JSON import completed, loading data...");
     location.reload();
   } catch {
-    setStatus("Chyba při importu JSON.");
+    setStatus("Error importing JSON.");
   } finally {
     event.target.value = "";
   }
@@ -2234,12 +2234,12 @@ async function importCsvSheet(event) {
     saveState();
     render();
     if (parsedCount > 0) {
-      setStatus(`CSV import hotový. Nalezeno měsíců: ${parsedCount}.`);
+      setStatus(`CSV import completed. Months found: ${parsedCount}.`);
     } else {
-      setStatus("CSV načten, ale nebyly rozpoznány měsíce (zkontroluj formát sloupce měsíc).\n");
+      setStatus("CSV loaded, but no months were recognized (check month column format).\n");
     }
   } catch {
-    setStatus("Chyba při importu CSV.");
+    setStatus("Error importing CSV.");
   } finally {
     event.target.value = "";
   }
@@ -2331,10 +2331,10 @@ function upsertImportedMonthlyRows(month, summary) {
   const totalIncome = Number(summary.income || 0);
   const mzda = totalIncome - passiveIncome;
 
-  upsertImportedEntry(monthData.income, "mzda", mzda, { isPassive: false });
-  upsertImportedEntry(monthData.income, "sporici ucet", passiveIncome, { isPassive: true });
-  upsertImportedEntry(monthData.expense, "Imported výdaje (CSV)", summary.expense);
-  upsertImportedEntry(monthData.investment, "Imported investice (CSV)", summary.investment);
+  upsertImportedEntry(monthData.income, "Salary", mzda, { isPassive: false });
+  upsertImportedEntry(monthData.income, "Savings account", passiveIncome, { isPassive: true });
+  upsertImportedEntry(monthData.expense, "Imported expenses (CSV)", summary.expense);
+  upsertImportedEntry(monthData.investment, "Imported investments (CSV)", summary.investment);
   upsertImportedAsset(monthData.assets, "Imported assets total (CSV)", summary.assets, false);
 }
 
@@ -2393,7 +2393,10 @@ function isCashAsset(asset) {
 
 function isCashAssetName(name) {
   const text = String(name || "").trim().toLowerCase();
-  return text.startsWith("cash") || text.includes("free cash") || text.includes("z toho free cash");
+  return text.startsWith("cash")
+    || text.includes("free cash")
+    || text.includes("of which free cash")
+    || text.includes("z toho free cash");
 }
 
 function parseCsv(text) {
