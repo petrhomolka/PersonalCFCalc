@@ -603,10 +603,18 @@ li small { color: var(--muted); }
   .kpi-grid p {
     font-size: 0.98rem;
   }
-.goal-achieved-hint {
+
+  .goal-achieved-hint {
     top: 3px;
     left: 8px;
     font-size: 0.52rem;
+  }
+
+  .goal-calc-btn {
+    top: 14px;
+    bottom: 3px;
+    left: 7px;
+    font-size: 0.75rem;
   }
 
   #assetList .row-actions {
@@ -648,7 +656,31 @@ li small { color: var(--muted); }
   width: 100%;
   min-width: 150px;
   text-align: right;
+  padding-left: 30px;
   padding-top: 14px;
+}
+
+.goal-calc-btn {
+  position: absolute;
+  left: 8px;
+  top: 16px;
+  bottom: 3px;
+  aspect-ratio: 1 / 1;
+  border-radius: 5px;
+  border: 1px solid #2c5f95;
+  background: #16325a;
+  color: #dbeafe;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.goal-calc-btn:hover {
+  border-color: var(--accent);
 }
 
 .goal-achieved-hint {

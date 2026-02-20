@@ -240,6 +240,7 @@ function wireEvents() {
 
   els.addYearBtn.addEventListener("click", addFutureYearGoals);
   els.removeYearBtn.addEventListener("click", removeLastFutureYearGoals);
+  els.goalTableBody.addEventListener("click", onGoalTableClick);
   els.goalTableBody.addEventListener("change", onGoalTableInputChange);
   els.goalTableBody.addEventListener("focusin", onGoalTableInputFocusIn);
   els.goalTableBody.addEventListener("focusout", onGoalTableInputFocusOut);
@@ -1427,8 +1428,8 @@ function renderGoalsTable() {
     tr.className = `${yearClass} ${currentClass}`.trim();
     tr.innerHTML = `
       <td data-label="Month">${escapeHtml(month)}</td>
-      <td data-label="Assets Goal"><span class="goal-input-wrap">${achievedAssetsHint}<input class="${goalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="goal" value="${formatGoalsCurrency(goalRow.goal)}" /></span></td>
-      <td data-label="Assets Prediction"><span class="goal-input-wrap">${achievedAssetsHint}<input class="${predictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="predikce" value="${formatGoalsCurrency(goalRow.predikce)}" /></span></td>
+      <td data-label="Assets Goal"><span class="goal-input-wrap">${achievedAssetsHint}<button type="button" class="goal-calc-btn" data-action="calc-goal-from-change" data-month="${month}" data-target-field="goal" aria-label="Calculate assets goal from previous month and assets change goal">⟳</button><input class="${goalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="goal" value="${formatGoalsCurrency(goalRow.goal)}" /></span></td>
+      <td data-label="Assets Prediction"><span class="goal-input-wrap">${achievedAssetsHint}<button type="button" class="goal-calc-btn" data-action="calc-prediction-from-change" data-month="${month}" data-target-field="predikce" aria-label="Calculate assets prediction from previous month and assets change prediction">⟳</button><input class="${predictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="predikce" value="${formatGoalsCurrency(goalRow.predikce)}" /></span></td>
       <td data-label="Assets Change Goal"><span class="goal-input-wrap">${achievedAssetChangeHint}<input class="${assetGoalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetGoal" value="${formatGoalsCurrency(goalRow.assetGoal)}" /></span></td>
       <td data-label="Assets Change Prediction"><span class="goal-input-wrap">${achievedAssetChangeHint}<input class="${assetPredictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetPrediction" value="${formatGoalsCurrency(goalRow.assetPrediction)}" /></span></td>
     `;
@@ -1512,6 +1513,36 @@ function onGoalTableInputFocusOut(event) {
 function getCurrentMonthKey() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function onGoalTableClick(event) {
+  const button = event.target.closest("button[data-action][data-month][data-target-field]");
+  if (!(button instanceof HTMLButtonElement)) return;
+
+  const month = button.dataset.month;
+  const targetField = button.dataset.targetField;
+  if (!month || !targetField) return;
+
+  const previousMonth = getPreviousMonth(month);
+  if (!previousMonth) {
+    setStatus("Cannot calculate value: previous month is missing.");
+    return;
+  }
+
+  ensureGoalMonth(previousMonth);
+  ensureGoalMonth(month);
+
+  const previousGoalRow = state.monthGoals[previousMonth] || {};
+  const previousTargetValue = Number(previousGoalRow[targetField]);
+  const previousAssetsFallback = Number(getTotalsForMonth(previousMonth).assets || 0);
+  const baseValue = Number.isFinite(previousTargetValue) ? previousTargetValue : previousAssetsFallback;
+
+  const changeField = targetField === "goal" ? "assetGoal" : "assetPrediction";
+  const changeValue = Number(state.monthGoals[month][changeField] || 0);
+
+  state.monthGoals[month][targetField] = baseValue + changeValue;
+  saveState();
+  render();
 }
 
 function onGoalTableInputChange(event) {
