@@ -1648,18 +1648,26 @@ function getAssetsTotalForMonth(month) {
 }
 
 function renderTrendChart() {
-  const labels = getMonthAxis();
-  const income = labels.map((month) => getTotalsForMonth(month).income);
-  const expense = labels.map((month) => getTotalsForMonth(month).expense);
-  const invest = labels.map((month) => getTotalsForMonth(month).investment);
-  const cashflow = labels.map((month) => getTotalsForMonth(month).cashflow);
+  const labels = getCashMonthAxis();
+  const assets = labels.map((month) => getTotalsForMonth(month).assets);
+  const prediction = labels.map((month) => getTotalsForMonth(month).predikce);
+  const goal = labels.map((month) => getTotalsForMonth(month).goal);
+  const trendline = buildTrendlineFromRealValues(assets, labels.length);
 
-  drawLineChart(els.trendChart, labels, [
-    { name: "Příjem", values: income, color: "#34d399" },
-    { name: "Výdaje", values: expense, color: "#f87171" },
-    { name: "Investice", values: invest, color: "#38bdf8" },
-    { name: "CashFlow", values: cashflow, color: "#fbbf24" }
-  ]);
+  drawCashChart(els.trendChart, labels, {
+    assets,
+    prediction,
+    goal,
+    trendline
+  });
+}
+
+function getCashMonthAxis() {
+  return Object.keys(state.months)
+    .concat(Object.keys(state.importedSummaries))
+    .concat(state.goalTimeline || [])
+    .filter((value, index, arr) => arr.indexOf(value) === index)
+    .sort();
 }
 
 function renderAssetChart() {
@@ -1706,6 +1714,218 @@ function getMonthAxis() {
     .filter((value, index, arr) => arr.indexOf(value) === index)
     .sort();
   return months.slice(-24);
+}
+
+function buildTrendlineFromRealValues(realValues, targetLength) {
+  const points = [];
+
+  realValues.forEach((value, index) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return;
+    points.push({ x: index + 1, y: numeric });
+  });
+
+  if (points.length < 2) {
+    return Array.from({ length: targetLength }, () => null);
+  }
+
+  const count = points.length;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumXX = 0;
+
+  points.forEach((point) => {
+    const logX = Math.log(point.x);
+    const logY = Math.log(point.y);
+    sumX += logX;
+    sumY += logY;
+    sumXY += logX * logY;
+    sumXX += logX * logX;
+  });
+
+  const denominator = (count * sumXX) - (sumX * sumX);
+  if (Math.abs(denominator) < 1e-9) {
+    const constant = Math.exp(sumY / count);
+    return Array.from({ length: targetLength }, () => constant);
+  }
+
+  const exponent = ((count * sumXY) - (sumX * sumY)) / denominator;
+  const intercept = (sumY - (exponent * sumX)) / count;
+  const coefficient = Math.exp(intercept);
+
+  return Array.from({ length: targetLength }, (_, index) => {
+    const x = index + 1;
+    const value = coefficient * Math.pow(x, exponent);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  });
+}
+
+function drawCashChart(canvas, labels, data) {
+  const ctx = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = Math.max(1, canvas.clientWidth || 0);
+  const cssHeight = Math.max(1, canvas.clientHeight || Number(canvas.getAttribute("height")) || 220);
+  const width = canvas.width = Math.floor(cssWidth * dpr);
+  const height = canvas.height = Math.floor(cssHeight * dpr);
+
+  ctx.clearRect(0, 0, width, height);
+  if (!labels.length) return;
+
+  const left = 86 * dpr;
+  const right = 28 * dpr;
+  const top = 30 * dpr;
+  const bottom = 34 * dpr;
+  const plotWidth = Math.max(1, width - left - right);
+  const plotHeight = Math.max(1, height - top - bottom);
+
+  const positiveValues = [];
+  [data.assets, data.prediction, data.goal, data.trendline].forEach((series) => {
+    series.forEach((value) => {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric) && numeric > 0) positiveValues.push(numeric);
+    });
+  });
+
+  if (!positiveValues.length) return;
+
+  const minPositive = Math.min(...positiveValues);
+  const maxPositive = Math.max(...positiveValues);
+  let minPower = Math.floor(Math.log10(minPositive));
+  let maxPower = Math.ceil(Math.log10(maxPositive));
+
+  if (minPower === maxPower) {
+    minPower -= 1;
+    maxPower += 1;
+  }
+
+  const axisMin = Math.pow(10, minPower);
+  const axisMax = Math.pow(10, maxPower);
+  const axisLogRange = Math.log10(axisMax) - Math.log10(axisMin);
+
+  const xForIndex = (index) => {
+    if (labels.length <= 1) return left + (plotWidth / 2);
+    return left + ((index * plotWidth) / (labels.length - 1));
+  };
+
+  const yForValue = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return top + plotHeight;
+    const clamped = Math.min(Math.max(numeric, axisMin), axisMax);
+    const ratio = (Math.log10(clamped) - Math.log10(axisMin)) / axisLogRange;
+    return top + plotHeight - (ratio * plotHeight);
+  };
+
+  ctx.strokeStyle = "#2c3c59";
+  ctx.lineWidth = 1 * dpr;
+  ctx.fillStyle = "#8ea2c2";
+  ctx.font = `${10 * dpr}px sans-serif`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+
+  for (let power = minPower; power <= maxPower; power += 1) {
+    const value = Math.pow(10, power);
+    const y = yForValue(value);
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(left + plotWidth, y);
+    ctx.stroke();
+    ctx.fillText(formatCurrency(value, getMainCurrency(), { minFractionDigits: 0, maxFractionDigits: 2 }), left - (8 * dpr), y);
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(left, top);
+  ctx.lineTo(left, top + plotHeight);
+  ctx.lineTo(left + plotWidth, top + plotHeight);
+  ctx.stroke();
+
+  const barWidth = Math.max(2 * dpr, Math.min(26 * dpr, (plotWidth / Math.max(labels.length, 1)) * 0.62));
+  ctx.fillStyle = "#3b82f6";
+  data.assets.forEach((value, index) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return;
+    const x = xForIndex(index);
+    const y = yForValue(numeric);
+    const barHeight = Math.max(1 * dpr, (top + plotHeight) - y);
+    ctx.fillRect(x - (barWidth / 2), y, barWidth, barHeight);
+  });
+
+  const drawSeries = (values, color, lineWidth = 2) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth * dpr;
+    ctx.beginPath();
+
+    let started = false;
+    values.forEach((value, index) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric <= 0) {
+        started = false;
+        return;
+      }
+
+      const x = xForIndex(index);
+      const y = yForValue(numeric);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+
+    ctx.stroke();
+  };
+
+  drawSeries(data.prediction, "#f59e0b", 2);
+  drawSeries(data.goal, "#ef4444", 2);
+  drawSeries(data.trendline, "#93c5fd", 2);
+
+  ctx.fillStyle = "#8ea2c2";
+  ctx.textBaseline = "top";
+  const labelStep = Math.max(1, Math.ceil(labels.length / 10));
+  labels.forEach((month, index) => {
+    const isLast = index === labels.length - 1;
+    if (!isLast && index % labelStep !== 0) return;
+    const x = xForIndex(index);
+    const shortMonth = String(month || "").replace("-", "/");
+    if (index === 0) ctx.textAlign = "left";
+    else if (isLast) ctx.textAlign = "right";
+    else ctx.textAlign = "center";
+    ctx.fillText(shortMonth, x, top + plotHeight + (6 * dpr));
+  });
+
+  const legend = [
+    { label: "realita", color: "#3b82f6", box: true },
+    { label: "Trendline", color: "#93c5fd", box: false },
+    { label: "cil", color: "#ef4444", box: false },
+    { label: "predikce", color: "#f59e0b", box: false }
+  ];
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.font = `${11 * dpr}px sans-serif`;
+
+  const legendY = 12 * dpr;
+  let legendX = left + (12 * dpr);
+  legend.forEach((item) => {
+    if (item.box) {
+      ctx.fillStyle = item.color;
+      ctx.fillRect(legendX, legendY - (5 * dpr), 10 * dpr, 10 * dpr);
+      legendX += 16 * dpr;
+    } else {
+      ctx.strokeStyle = item.color;
+      ctx.lineWidth = 2 * dpr;
+      ctx.beginPath();
+      ctx.moveTo(legendX, legendY);
+      ctx.lineTo(legendX + (12 * dpr), legendY);
+      ctx.stroke();
+      legendX += 18 * dpr;
+    }
+
+    ctx.fillStyle = "#d5deec";
+    ctx.fillText(item.label, legendX, legendY);
+    legendX += (ctx.measureText(item.label).width + (18 * dpr));
+  });
 }
 
 function drawLineChart(canvas, labels, series) {
