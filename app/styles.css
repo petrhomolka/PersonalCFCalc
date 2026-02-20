@@ -271,6 +271,12 @@ li.investment-summary {
   color: #bfdbfe;
 }
 
+li.asset-summary {
+  border-bottom: 0;
+  padding: 5px 0;
+  color: #dbeafe;
+}
+
 li small { color: var(--muted); }
 
 .row-actions {

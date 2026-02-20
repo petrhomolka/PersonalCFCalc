@@ -1085,10 +1085,16 @@ function updateRatesStatus(prefix = "") {
 
 function renderAssetList(listEl, month, items) {
   listEl.innerHTML = "";
+  const totalAssets = (items || []).reduce((sum, item) => sum + getAssetValueInMainCurrency(item), 0);
+  const totalCashAssets = (items || [])
+    .filter((item) => isCashAsset(item))
+    .reduce((sum, item) => sum + getAssetValueInMainCurrency(item), 0);
+
   if (!items.length) {
     const li = document.createElement("li");
     li.innerHTML = "<small>Žádná data</small>";
     listEl.appendChild(li);
+    appendAssetSummaryRows(listEl, totalAssets, totalCashAssets);
     return;
   }
 
@@ -1113,7 +1119,32 @@ function renderAssetList(listEl, month, items) {
     listEl.appendChild(li);
   });
 
+  appendAssetSummaryRows(listEl, totalAssets, totalCashAssets);
+
   bindRowActions(listEl);
+}
+
+function appendAssetSummaryRows(listEl, totalAssets, totalCashAssets) {
+  const header = document.createElement("li");
+  header.className = "entry-section-header";
+  header.innerHTML = "<small>Asset summary</small>";
+  listEl.appendChild(header);
+
+  const totalRow = document.createElement("li");
+  totalRow.className = "asset-summary";
+  totalRow.innerHTML = `
+    <span>Total assets</span>
+    <span class="row-actions"><strong>${formatCurrency(totalAssets)}</strong></span>
+  `;
+  listEl.appendChild(totalRow);
+
+  const cashRow = document.createElement("li");
+  cashRow.className = "asset-summary";
+  cashRow.innerHTML = `
+    <span>Total cash assets</span>
+    <span class="row-actions"><strong>${formatCurrency(totalCashAssets)}</strong></span>
+  `;
+  listEl.appendChild(cashRow);
 }
 
 function bindRowActions(container) {
