@@ -112,6 +112,8 @@ const els = {
   entryAmount: document.getElementById("entryAmount"),
   entryCategoryWrap: document.getElementById("entryCategoryWrap"),
   entryCategory: document.getElementById("entryCategory"),
+  entryPassiveWrap: document.getElementById("entryPassiveWrap"),
+  entryPassive: document.getElementById("entryPassive"),
   entryPeriodic: document.getElementById("entryPeriodic"),
   incomeList: document.getElementById("incomeList"),
   expenseList: document.getElementById("expenseList"),
@@ -253,6 +255,7 @@ function wireEvents() {
       name: els.entryName.value.trim(),
       amount: Number(els.entryAmount.value),
       periodic: els.entryPeriodic.checked,
+      isPassive: type === "income" ? Boolean(els.entryPassive && els.entryPassive.checked) : false,
       category: type === "expense" ? normalizeExpenseCategory(els.entryCategory && els.entryCategory.value) : ""
     });
     els.entryForm.reset();
@@ -342,7 +345,7 @@ function onTabClick(event) {
   document.getElementById(tab.dataset.tab).classList.add("active");
 }
 
-function addEntry({ month, type, name, amount, periodic, category }) {
+function addEntry({ month, type, name, amount, periodic, category, isPassive }) {
   if (!month || !name || Number.isNaN(amount)) return;
   ensureMonth(month);
 
@@ -350,6 +353,7 @@ function addEntry({ month, type, name, amount, periodic, category }) {
   const item = { id, name, amount, periodic, createdAt: Date.now() };
   const normalizedCategory = type === "expense" ? normalizeExpenseCategory(category) : "";
   if (normalizedCategory) item.category = normalizedCategory;
+  if (type === "income") item.isPassive = Boolean(isPassive);
 
   if (type === "income") state.months[month].income.push(item);
   if (type === "expense") state.months[month].expense.push(item);
@@ -404,6 +408,7 @@ function carryPeriodicFromPreviousMonth(month) {
         name: item.name,
         amount: item.amount,
         category: normalizeExpenseCategory(item.category),
+        isPassive: Boolean(type === "income" && item.isPassive),
         periodic: true,
         carriedFrom: previous,
         sourceEntryId,
@@ -437,6 +442,7 @@ function syncPeriodicPrefill(month) {
         name: item.name,
         amount: item.amount,
         category: normalizeExpenseCategory(item.category),
+        isPassive: Boolean(type === "income" && item.isPassive),
         periodic: true,
         carriedFrom: previous,
         sourceEntryId,
@@ -548,6 +554,7 @@ function carryAllEntriesToNextMonth(fromMonth, toMonth) {
         amount: Number(item.amount) || 0,
         periodic: Boolean(item.periodic),
         category: normalizeExpenseCategory(item.category),
+        isPassive: Boolean(type === "income" && item.isPassive),
         carriedFrom: fromMonth,
         sourceEntryId,
         sourceCarryKey,
@@ -657,6 +664,9 @@ function renderEntryList(listEl, month, type, items) {
     const periodicBadge = item.periodic
       ? '<small class="item-badge periodic-badge">PERIODICAL</small>'
       : '<small class="item-badge onetime-badge">ONE-TIME</small>';
+    const passiveBadge = type === "income" && item.isPassive
+      ? '<small class="item-badge periodic-badge">PASSIVE</small>'
+      : "";
     const categoryLine = type === "expense" && normalizeExpenseCategory(item.category)
       ? `<small class="item-category-line">${escapeHtml(normalizeExpenseCategory(item.category))}</small>`
       : "";
@@ -665,6 +675,7 @@ function renderEntryList(listEl, month, type, items) {
       <span>
         ${escapeHtml(item.name)}
         ${item.periodic !== undefined ? periodicBadge : ""}
+        ${passiveBadge}
         ${categoryLine}
         ${autoText}
       </span>
@@ -705,9 +716,7 @@ function renderEntryList(listEl, month, type, items) {
 
 function renderInvestmentSummarySection(listEl, month, investmentItems) {
   const totalInvestment = sumBy(investmentItems, "amount");
-  const monthData = state.months[month] || { income: [] };
-  const incomeTotal = sumBy(monthData.income || [], "amount");
-  const ratio = incomeTotal > 0 ? (totalInvestment / incomeTotal) * 100 : 0;
+  const ratio = calculateInvestmentIncomeRatio(month);
 
   const header = document.createElement("li");
   header.className = "entry-section-header";
@@ -729,6 +738,14 @@ function renderInvestmentSummarySection(listEl, month, investmentItems) {
     <span class="row-actions"><strong>${formatPercent(ratio)}</strong></span>
   `;
   listEl.appendChild(ratioRow);
+}
+
+function calculateInvestmentIncomeRatio(month) {
+  const monthData = state.months[month] || { income: [], investment: [] };
+  const totalInvestment = sumBy(monthData.investment || [], "amount");
+  const incomeTotal = sumBy(monthData.income || [], "amount");
+  if (incomeTotal <= 0) return 0;
+  return (totalInvestment / incomeTotal) * 100;
 }
 
 function renderExpenseSummarySection(listEl, expenseItems, title, mode) {
@@ -769,11 +786,18 @@ function getExpenseCategoryTotals(expenseItems) {
 
 function onEntryTypeChange() {
   const isExpense = els.entryType && els.entryType.value === "expense";
+  const isIncome = els.entryType && els.entryType.value === "income";
   if (els.entryCategoryWrap) {
     els.entryCategoryWrap.hidden = !isExpense;
   }
   if (!isExpense && els.entryCategory) {
     els.entryCategory.value = "";
+  }
+  if (els.entryPassiveWrap) {
+    els.entryPassiveWrap.hidden = !isIncome;
+  }
+  if (!isIncome && els.entryPassive) {
+    els.entryPassive.checked = false;
   }
 }
 
@@ -1196,6 +1220,14 @@ async function editEntry(month, type, id) {
       value: normalizeExpenseCategory(item.category)
     });
   }
+  if (type === "income") {
+    fields.push({
+      key: "isPassive",
+      label: "Passive income",
+      type: "checkbox",
+      value: Boolean(item.isPassive)
+    });
+  }
 
   const edited = await showEditModal({
     title: type === "expense" ? "Upravit výdaj" : type === "income" ? "Upravit příjem" : "Upravit investici",
@@ -1217,6 +1249,11 @@ async function editEntry(month, type, id) {
     else delete item.category;
   } else {
     delete item.category;
+  }
+  if (type === "income") {
+    item.isPassive = Boolean(edited.isPassive);
+  } else {
+    delete item.isPassive;
   }
   item.updatedAt = Date.now();
 
@@ -1523,6 +1560,9 @@ function getTotalsForMonth(month) {
   const localFreeCash = monthData.assets
     .filter((item) => isCashAsset(item))
     .reduce((sum, item) => sum + getAssetValueInMainCurrency(item), 0);
+  const localPassiveIncome = (monthData.income || [])
+    .filter((item) => Boolean(item.isPassive))
+    .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
   const imported = state.importedSummaries[month] || {};
   ensureGoalMonth(month);
@@ -1534,7 +1574,6 @@ function getTotalsForMonth(month) {
   const importedAssets = convertAmountToMainCurrency(imported.assets || 0, "CZK");
   const importedGoal = convertAmountToMainCurrency(imported.goal || 0, "CZK");
   const importedPredikce = convertAmountToMainCurrency(imported.predikce || 0, "CZK");
-  const importedAssetChange = convertAmountToMainCurrency(imported.assetChange || 0, "CZK");
   const importedAssetGoal = convertAmountToMainCurrency(imported.assetGoal || 0, "CZK");
   const importedAssetPrediction = convertAmountToMainCurrency(imported.assetPrediction || 0, "CZK");
   const importedFreeCash = convertAmountToMainCurrency(imported.freeCash || 0, "CZK");
@@ -1545,6 +1584,9 @@ function getTotalsForMonth(month) {
   const expense = localExpense || importedExpense || 0;
   const investment = localInvestment || importedInvestment || 0;
   const assets = localAssets || importedAssets || 0;
+  const previousMonth = getPreviousMonth(month);
+  const previousAssets = previousMonth ? getAssetsTotalForMonth(previousMonth) : 0;
+  const passiveIncome = localIncome > 0 ? localPassiveIncome : (importedPassiveIncome || 0);
 
   return {
     income,
@@ -1555,14 +1597,22 @@ function getTotalsForMonth(month) {
     realita: convertAmountToMainCurrency(imported.realita || 0, "CZK"),
     goal: Number(monthGoal.goal || importedGoal || 0),
     predikce: Number(monthGoal.predikce || importedPredikce || 0),
-    assetChange: importedAssetChange || 0,
+    assetChange: assets - previousAssets,
     assetGoal: Number(monthGoal.assetGoal || importedAssetGoal || 0),
     assetPrediction: Number(monthGoal.assetPrediction || importedAssetPrediction || 0),
     freeCash: localFreeCash || importedFreeCash || 0,
     passiveCf: importedPassiveCf || 0,
-    passiveIncome: importedPassiveIncome || 0,
-    investIncomeRatio: imported.investIncomeRatio || 0
+    passiveIncome,
+    investIncomeRatio: calculateInvestmentIncomeRatio(month)
   };
+}
+
+function getAssetsTotalForMonth(month) {
+  const monthData = state.months[month] || { assets: [] };
+  const localAssets = (monthData.assets || []).reduce((sum, item) => sum + getAssetValueInMainCurrency(item), 0);
+  const imported = state.importedSummaries[month] || {};
+  const importedAssets = convertAmountToMainCurrency(imported.assets || 0, "CZK");
+  return localAssets || importedAssets || 0;
 }
 
 function renderTrendChart() {
@@ -1815,18 +1865,21 @@ function upsertImportedMonthlyRows(month, summary) {
   const totalIncome = Number(summary.income || 0);
   const mzda = totalIncome - passiveIncome;
 
-  upsertImportedEntry(monthData.income, "mzda", mzda);
-  upsertImportedEntry(monthData.income, "sporici ucet", passiveIncome);
+  upsertImportedEntry(monthData.income, "mzda", mzda, { isPassive: false });
+  upsertImportedEntry(monthData.income, "sporici ucet", passiveIncome, { isPassive: true });
   upsertImportedEntry(monthData.expense, "Imported výdaje (CSV)", summary.expense);
   upsertImportedEntry(monthData.investment, "Imported investice (CSV)", summary.investment);
   upsertImportedAsset(monthData.assets, "Imported assets total (CSV)", summary.assets, false);
 }
 
-function upsertImportedEntry(list, name, amount) {
+function upsertImportedEntry(list, name, amount, options = {}) {
   if (!Number.isFinite(amount)) return;
   const existing = list.find((item) => item.source === "imported-csv-summary" && item.name === name);
   if (existing) {
     existing.amount = amount;
+    if (Object.prototype.hasOwnProperty.call(options, "isPassive")) {
+      existing.isPassive = Boolean(options.isPassive);
+    }
     existing.updatedAt = Date.now();
     return;
   }
@@ -1836,6 +1889,7 @@ function upsertImportedEntry(list, name, amount) {
     name,
     amount,
     periodic: false,
+    isPassive: Boolean(options.isPassive),
     source: "imported-csv-summary",
     createdAt: Date.now()
   });
