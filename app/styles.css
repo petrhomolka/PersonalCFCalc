@@ -448,7 +448,9 @@ li small { color: var(--muted); }
 
   .tabs .tab {
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
+    word-break: normal;
+    hyphens: none;
     text-align: center;
     line-height: 1.2;
     min-height: 48px;
