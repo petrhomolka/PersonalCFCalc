@@ -537,6 +537,7 @@ li small { color: var(--muted); }
 .goals-table input {
   width: 100%;
   min-width: 150px;
+  text-align: right;
 }
 
 .goals-table input.goal-reached {

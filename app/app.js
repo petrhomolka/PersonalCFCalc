@@ -240,7 +240,9 @@ function wireEvents() {
 
   els.addYearBtn.addEventListener("click", addFutureYearGoals);
   els.removeYearBtn.addEventListener("click", removeLastFutureYearGoals);
-  els.goalTableBody.addEventListener("input", onGoalTableInputChange);
+  els.goalTableBody.addEventListener("change", onGoalTableInputChange);
+  els.goalTableBody.addEventListener("focusin", onGoalTableInputFocusIn);
+  els.goalTableBody.addEventListener("focusout", onGoalTableInputFocusOut);
 
   els.exportJsonBtn.addEventListener("click", exportJson);
   els.importJsonInput.addEventListener("change", importJson);
@@ -1418,13 +1420,72 @@ function renderGoalsTable() {
     tr.className = `${yearClass} ${currentClass}`.trim();
     tr.innerHTML = `
       <td>${escapeHtml(month)}</td>
-      <td><input class="${goalClass}" type="number" step="0.01" data-month="${month}" data-field="goal" value="${goalRow.goal || 0}" /></td>
-      <td><input class="${predictionClass}" type="number" step="0.01" data-month="${month}" data-field="predikce" value="${goalRow.predikce || 0}" /></td>
-      <td><input class="${assetGoalClass}" type="number" step="0.01" data-month="${month}" data-field="assetGoal" value="${goalRow.assetGoal || 0}" /></td>
-      <td><input class="${assetPredictionClass}" type="number" step="0.01" data-month="${month}" data-field="assetPrediction" value="${goalRow.assetPrediction || 0}" /></td>
+      <td><input class="${goalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="goal" value="${formatGoalsCurrency(goalRow.goal)}" /></td>
+      <td><input class="${predictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="predikce" value="${formatGoalsCurrency(goalRow.predikce)}" /></td>
+      <td><input class="${assetGoalClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetGoal" value="${formatGoalsCurrency(goalRow.assetGoal)}" /></td>
+      <td><input class="${assetPredictionClass}" type="text" inputmode="decimal" data-month="${month}" data-field="assetPrediction" value="${formatGoalsCurrency(goalRow.assetPrediction)}" /></td>
     `;
     els.goalTableBody.appendChild(tr);
   });
+}
+
+function formatGoalsCurrency(value) {
+  return formatCurrency(Number(value || 0), getMainCurrency(), { minFractionDigits: 0, maxFractionDigits: 2 });
+}
+
+function formatGoalsEditableNumber(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return "0";
+  return String(Math.round(numeric * 100) / 100).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+}
+
+function parseGoalsInputNumber(rawValue) {
+  const text = String(rawValue || "").trim();
+  if (!text) return 0;
+
+  const cleaned = text
+    .replace(/\u00A0/g, "")
+    .replace(/\s/g, "")
+    .replace(/[^\d,.-]/g, "");
+
+  if (!cleaned || cleaned === "-" || cleaned === "." || cleaned === ",") return NaN;
+
+  const commaIndex = cleaned.lastIndexOf(",");
+  const dotIndex = cleaned.lastIndexOf(".");
+  let normalized = cleaned;
+
+  if (commaIndex > dotIndex) {
+    normalized = cleaned.replace(/\./g, "").replace(",", ".");
+  } else if (dotIndex > commaIndex) {
+    normalized = cleaned.replace(/,/g, "");
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function onGoalTableInputFocusIn(event) {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement)) return;
+  const month = input.dataset.month;
+  const field = input.dataset.field;
+  if (!month || !field) return;
+
+  ensureGoalMonth(month);
+  const numeric = Number(state.monthGoals[month][field] || 0);
+  input.value = formatGoalsEditableNumber(numeric);
+}
+
+function onGoalTableInputFocusOut(event) {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement)) return;
+  const month = input.dataset.month;
+  const field = input.dataset.field;
+  if (!month || !field) return;
+
+  ensureGoalMonth(month);
+  const numeric = Number(state.monthGoals[month][field] || 0);
+  input.value = formatGoalsCurrency(numeric);
 }
 
 function getCurrentMonthKey() {
@@ -1439,8 +1500,14 @@ function onGoalTableInputChange(event) {
   const field = input.dataset.field;
   if (!month || !field) return;
 
+  const parsedValue = parseGoalsInputNumber(input.value);
+  if (!Number.isFinite(parsedValue)) {
+    onGoalTableInputFocusOut(event);
+    return;
+  }
+
   ensureGoalMonth(month);
-  state.monthGoals[month][field] = Number(input.value || 0);
+  state.monthGoals[month][field] = parsedValue;
   saveState();
   render();
 }
