@@ -132,6 +132,8 @@ const els = {
   assetChart: document.getElementById("assetChart"),
   macroChart: document.getElementById("macroChart"),
   assetMacroChart: document.getElementById("assetMacroChart"),
+  cashflowChart: document.getElementById("cashflowChart"),
+  incomeChart: document.getElementById("incomeChart"),
   exportJsonBtn: document.getElementById("exportJsonBtn"),
   importJsonInput: document.getElementById("importJsonInput"),
   importCsvInput: document.getElementById("importCsvInput"),
@@ -627,6 +629,8 @@ function render() {
   renderAssetChart();
   renderMacroChart();
   renderAssetMacroChart();
+  renderCashflowChart();
+  renderIncomeChart();
 }
 
 function setKpiWithYearly(element, monthlyValue) {
@@ -1609,6 +1613,7 @@ function getTotalsForMonth(month) {
   const importedAssetGoal = convertAmountToMainCurrency(imported.assetGoal || 0, "CZK");
   const importedAssetPrediction = convertAmountToMainCurrency(imported.assetPrediction || 0, "CZK");
   const importedFreeCash = convertAmountToMainCurrency(imported.freeCash || 0, "CZK");
+  const importedCashFlow = convertAmountToMainCurrency(imported.cashFlow || 0, "CZK");
   const importedPassiveCf = convertAmountToMainCurrency(imported.passiveCf || 0, "CZK");
   const importedPassiveIncome = convertAmountToMainCurrency(imported.passiveIncome || 0, "CZK");
 
@@ -1619,13 +1624,17 @@ function getTotalsForMonth(month) {
   const previousMonth = getPreviousMonth(month);
   const previousAssets = previousMonth ? getAssetsTotalForMonth(previousMonth) : 0;
   const passiveIncome = localIncome > 0 ? localPassiveIncome : (importedPassiveIncome || 0);
+  const hasLocalCashflowInputs = (monthData.income || []).some((item) => item && item.source !== "imported-csv-summary")
+    || (monthData.expense || []).some((item) => item && item.source !== "imported-csv-summary");
+  const derivedCashflow = income - expense;
+  const cashflow = hasLocalCashflowInputs ? derivedCashflow : importedCashFlow;
 
   return {
     income,
     expense,
     investment,
     assets,
-    cashflow: income - expense,
+    cashflow,
     realita: convertAmountToMainCurrency(imported.realita || 0, "CZK"),
     goal: Number(monthGoal.goal || importedGoal || 0),
     predikce: Number(monthGoal.predikce || importedPredikce || 0),
@@ -1671,40 +1680,141 @@ function getCashMonthAxis() {
 }
 
 function renderAssetChart() {
-  const labels = getMonthAxis();
-  const assets = labels.map((month) => getTotalsForMonth(month).assets);
-  const goals = labels.map((month) => getTotalsForMonth(month).assetGoal);
+  const labels = getCashMonthAxis();
+  const assetChange = labels.map((month) => getTotalsForMonth(month).assetChange);
+  const prediction = labels.map((month) => getTotalsForMonth(month).assetPrediction);
+  const goal = labels.map((month) => getTotalsForMonth(month).assetGoal);
+  const trendline = buildTrendlineFromRealValues(assetChange, labels.length);
 
-  drawLineChart(els.assetChart, labels, [
-    { name: "Assets", values: assets, color: "#a78bfa" },
-    { name: "Goal", values: goals, color: "#22d3ee" }
-  ]);
+  drawCashChart(els.assetChart, labels, {
+    assets: assetChange,
+    prediction,
+    goal,
+    trendline
+  });
 }
 
 function renderMacroChart() {
-  const labels = getMonthAxis();
-  const realita = labels.map((month) => getTotalsForMonth(month).realita);
-  const goal = labels.map((month) => getTotalsForMonth(month).goal);
-  const predikce = labels.map((month) => getTotalsForMonth(month).predikce);
+  const labels = getCashMonthAxis();
+  const currentMonth = getChartCutoffMonth();
+  const passiveCf = labels.map((month) => getTotalsForMonth(month).passiveCf);
+  const passiveIncome = labels.map((month) => getTotalsForMonth(month).passiveIncome);
+  const passiveCfUntilCurrent = maskValuesAfterCurrentMonth(labels, passiveCf, currentMonth);
+  const passiveIncomeUntilCurrent = maskValuesAfterCurrentMonth(labels, passiveIncome, currentMonth);
 
   drawLineChart(els.macroChart, labels, [
-    { name: "Realita", values: realita, color: "#f59e0b" },
-    { name: "Goal", values: goal, color: "#22d3ee" },
-    { name: "Predikce", values: predikce, color: "#10b981" }
-  ]);
+    { name: "Pasivni CF", values: passiveCfUntilCurrent, color: "#3b82f6" },
+    { name: "Pasivni prijem", values: passiveIncomeUntilCurrent, color: "#ef4444" }
+  ], {
+    yAxisLabel: ""
+  });
+}
+
+function buildLinearTrendline(values, targetLength) {
+  const points = [];
+
+  values.forEach((value, index) => {
+    if (value === null || value === undefined) return;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return;
+    points.push({ x: index + 1, y: numeric });
+  });
+
+  if (!points.length) return Array.from({ length: targetLength }, () => null);
+  if (points.length === 1) return Array.from({ length: targetLength }, () => points[0].y);
+
+  const count = points.length;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumXX = 0;
+
+  points.forEach((point) => {
+    sumX += point.x;
+    sumY += point.y;
+    sumXY += point.x * point.y;
+    sumXX += point.x * point.x;
+  });
+
+  const denominator = (count * sumXX) - (sumX * sumX);
+  if (Math.abs(denominator) < 1e-9) {
+    const average = sumY / count;
+    return Array.from({ length: targetLength }, () => average);
+  }
+
+  const slope = ((count * sumXY) - (sumX * sumY)) / denominator;
+  const intercept = (sumY - (slope * sumX)) / count;
+
+  return Array.from({ length: targetLength }, (_, index) => intercept + (slope * (index + 1)));
 }
 
 function renderAssetMacroChart() {
-  const labels = getMonthAxis();
-  const assetChange = labels.map((month) => getTotalsForMonth(month).assetChange);
-  const assetGoal = labels.map((month) => getTotalsForMonth(month).assetGoal);
-  const assetPrediction = labels.map((month) => getTotalsForMonth(month).assetPrediction);
+  const labels = getCashMonthAxis();
+  const currentMonth = getChartCutoffMonth();
+  const investIncomeRatio = labels.map((month) => getTotalsForMonth(month).investIncomeRatio);
+  const investIncomeRatioUntilCurrent = maskValuesAfterCurrentMonth(labels, investIncomeRatio, currentMonth);
+  const trendline = buildTrendlineFromRealValues(investIncomeRatio, labels.length);
 
   drawLineChart(els.assetMacroChart, labels, [
-    { name: "Asset Change", values: assetChange, color: "#f43f5e" },
-    { name: "Asset Goal", values: assetGoal, color: "#38bdf8" },
-    { name: "Asset Prediction", values: assetPrediction, color: "#c084fc" }
-  ]);
+    { name: "Investment/Income ratio", values: investIncomeRatioUntilCurrent, color: "#3b82f6" },
+    { name: "Trendline", values: trendline, color: "#93c5fd" }
+  ], {
+    yAxisType: "percent",
+    yAxisLabel: ""
+  });
+}
+
+function renderCashflowChart() {
+  const labels = getCashMonthAxis();
+  const currentMonth = getChartCutoffMonth();
+  const cashFlow = labels.map((month) => getTotalsForMonth(month).cashflow);
+  const cashFlowUntilCurrent = maskValuesAfterCurrentMonth(labels, cashFlow, currentMonth);
+  const trendline = buildLinearTrendline(cashFlowUntilCurrent, labels.length);
+
+  drawLineChart(els.cashflowChart, labels, [
+    { name: "CashFlow", values: cashFlowUntilCurrent, color: "#3b82f6" },
+    { name: "Trendline", values: trendline, color: "#93c5fd" }
+  ], {
+    yAxisLabel: ""
+  });
+}
+
+function renderIncomeChart() {
+  const labels = getCashMonthAxis();
+  const currentMonth = getChartCutoffMonth();
+  const income = labels.map((month) => getTotalsForMonth(month).income);
+  const incomeUntilCurrent = maskValuesAfterCurrentMonth(labels, income, currentMonth);
+  const trendline = buildLinearTrendline(incomeUntilCurrent, labels.length);
+
+  drawLineChart(els.incomeChart, labels, [
+    { name: "Prijem", values: incomeUntilCurrent, color: "#22c55e" },
+    { name: "Trendline", values: trendline, color: "#93c5fd" }
+  ], {
+    yAxisLabel: ""
+  });
+}
+
+function maskValuesAfterCurrentMonth(labels, values, currentMonth = getCurrentMonthKey()) {
+  let cutoffIndex = -1;
+  for (let index = 0; index < labels.length; index += 1) {
+    const month = labels[index];
+    if (month && month <= currentMonth) cutoffIndex = index;
+  }
+
+  return values.map((value, index) => (index <= cutoffIndex ? value : null));
+}
+
+function getChartCutoffMonth() {
+  const actualCurrentMonth = getCurrentMonthKey();
+  const selectedMonth = els.monthSelect && typeof els.monthSelect.value === "string"
+    ? String(els.monthSelect.value).trim()
+    : "";
+
+  if (/^\d{4}-\d{2}$/.test(selectedMonth)) {
+    return selectedMonth <= actualCurrentMonth ? selectedMonth : actualCurrentMonth;
+  }
+
+  return actualCurrentMonth;
 }
 
 function getMonthAxis() {
@@ -1928,53 +2038,157 @@ function drawCashChart(canvas, labels, data) {
   });
 }
 
-function drawLineChart(canvas, labels, series) {
+function drawLineChart(canvas, labels, series, options = {}) {
   const ctx = canvas.getContext("2d");
-  const width = canvas.width = canvas.clientWidth * devicePixelRatio;
-  const height = canvas.height = canvas.clientHeight * devicePixelRatio;
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.width = canvas.clientWidth * dpr;
+  const height = canvas.height = canvas.clientHeight * dpr;
 
   ctx.clearRect(0, 0, width, height);
 
   if (!labels.length) return;
 
-  const padding = 34 * devicePixelRatio;
-  const allValues = series.reduce((acc, line) => acc.concat(line.values), []);
-  const max = Math.max(...allValues, 1);
-  const min = Math.min(...allValues, 0);
-  const range = max - min || 1;
+  const left = 86 * dpr;
+  const right = 24 * dpr;
+  const top = 30 * dpr;
+  const bottom = 34 * dpr;
+  const plotWidth = Math.max(1, width - left - right);
+  const plotHeight = Math.max(1, height - top - bottom);
+
+  const allValues = series
+    .reduce((acc, line) => acc.concat(line.values), [])
+    .filter((value) => value !== null && value !== undefined)
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+  if (!allValues.length) return;
+
+  let min = Math.min(...allValues);
+  let max = Math.max(...allValues);
+  if (min > 0) min = 0;
+  if (max < 0) max = 0;
+  if (Math.abs(max - min) < 1e-9) {
+    const padding = Math.max(1, Math.abs(max) * 0.1);
+    max += padding;
+    min -= padding;
+  }
+  const range = max - min;
+
+  const xForIndex = (index) => {
+    if (labels.length <= 1) return left + (plotWidth / 2);
+    return left + ((index * plotWidth) / (labels.length - 1));
+  };
+
+  const yForValue = (value) => {
+    const ratio = (Number(value) - min) / range;
+    return top + plotHeight - (ratio * plotHeight);
+  };
+
+  const yTicks = 5;
+  const yAxisType = options.yAxisType === "percent" ? "percent" : "currency";
+  const hasYAxisLabelOption = Object.prototype.hasOwnProperty.call(options, "yAxisLabel");
+  const yAxisLabel = hasYAxisLabelOption
+    ? String(options.yAxisLabel || "")
+    : `Hodnoty (${getMainCurrency()})`;
+  const formatYAxisValue = (value) => {
+    if (yAxisType === "percent") return `${Number(value).toFixed(2)} %`;
+    return formatCurrency(value, getMainCurrency(), { minFractionDigits: 0, maxFractionDigits: 2 });
+  };
+  ctx.strokeStyle = "#2c3c59";
+  ctx.lineWidth = 1 * dpr;
+  ctx.fillStyle = "#8ea2c2";
+  ctx.font = `${10 * dpr}px sans-serif`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+
+  for (let tick = 0; tick <= yTicks; tick += 1) {
+    const ratio = tick / yTicks;
+    const value = max - (ratio * range);
+    const y = top + (ratio * plotHeight);
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(left + plotWidth, y);
+    ctx.stroke();
+    ctx.fillText(formatYAxisValue(value), left - (8 * dpr), y);
+  }
 
   ctx.strokeStyle = "#3a4b6a";
-  ctx.lineWidth = 1 * devicePixelRatio;
+  ctx.lineWidth = 1 * dpr;
   ctx.beginPath();
-  ctx.moveTo(padding, padding / 2);
-  ctx.lineTo(padding, height - padding);
-  ctx.lineTo(width - padding / 2, height - padding);
+  ctx.moveTo(left, top);
+  ctx.lineTo(left, top + plotHeight);
+  ctx.lineTo(left + plotWidth, top + plotHeight);
   ctx.stroke();
 
   series.forEach((line) => {
     ctx.strokeStyle = line.color;
-    ctx.lineWidth = 2 * devicePixelRatio;
+    ctx.lineWidth = 2 * dpr;
     ctx.beginPath();
 
+    let started = false;
     line.values.forEach((value, index) => {
-      const x = padding + (index * (width - padding * 1.5)) / Math.max(labels.length - 1, 1);
-      const y = height - padding - ((value - min) / range) * (height - padding * 1.5);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      if (value === null || value === undefined) {
+        started = false;
+        return;
+      }
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        started = false;
+        return;
+      }
+      const x = xForIndex(index);
+      const y = yForValue(numeric);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
     });
 
     ctx.stroke();
   });
 
   ctx.fillStyle = "#8ea2c2";
-  ctx.font = `${11 * devicePixelRatio}px sans-serif`;
-  const shortLabels = labels.map((label) => label.slice(2));
-
-  shortLabels.forEach((label, index) => {
-    if (index % 3 !== 0 && index !== shortLabels.length - 1) return;
-    const x = padding + (index * (width - padding * 1.5)) / Math.max(shortLabels.length - 1, 1);
-    ctx.fillText(label, x - 12 * devicePixelRatio, height - 8 * devicePixelRatio);
+  ctx.font = `${10 * dpr}px sans-serif`;
+  ctx.textBaseline = "top";
+  const labelStep = Math.max(1, Math.ceil(labels.length / 10));
+  labels.forEach((month, index) => {
+    const isLast = index === labels.length - 1;
+    if (!isLast && index % labelStep !== 0) return;
+    const x = xForIndex(index);
+    const shortMonth = String(month || "").replace("-", "/");
+    if (index === 0) ctx.textAlign = "left";
+    else if (isLast) ctx.textAlign = "right";
+    else ctx.textAlign = "center";
+    ctx.fillText(shortMonth, x, top + plotHeight + (6 * dpr));
   });
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.font = `${11 * dpr}px sans-serif`;
+  const legendY = 12 * dpr;
+  let legendX = left + (12 * dpr);
+  series.forEach((line) => {
+    ctx.strokeStyle = line.color;
+    ctx.lineWidth = 2 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(legendX, legendY);
+    ctx.lineTo(legendX + (12 * dpr), legendY);
+    ctx.stroke();
+    legendX += 18 * dpr;
+
+    ctx.fillStyle = "#d5deec";
+    ctx.fillText(String(line.name || ""), legendX, legendY);
+    legendX += (ctx.measureText(String(line.name || "")).width + (18 * dpr));
+  });
+
+  ctx.fillStyle = "#8ea2c2";
+  ctx.font = `${10 * dpr}px sans-serif`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  if (yAxisLabel) {
+    ctx.fillText(yAxisLabel, left, top - (8 * dpr));
+  }
 }
 
 function exportJson() {
