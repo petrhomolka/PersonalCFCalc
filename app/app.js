@@ -99,12 +99,9 @@ const els = {
   kpiInvest: document.getElementById("kpiInvest"),
   kpiCashflow: document.getElementById("kpiCashflow"),
   kpiAssets: document.getElementById("kpiAssets"),
-  kpiAssetGoal: document.getElementById("kpiAssetGoal"),
   kpiPassiveCf: document.getElementById("kpiPassiveCf"),
-  kpiPassiveIncome: document.getElementById("kpiPassiveIncome"),
   kpiInvestIncomeRatio: document.getElementById("kpiInvestIncomeRatio"),
   kpiFreeCash: document.getElementById("kpiFreeCash"),
-  kpiPredikce: document.getElementById("kpiPredikce"),
   kpiAssetChange: document.getElementById("kpiAssetChange"),
   entryForm: document.getElementById("entryForm"),
   entryType: document.getElementById("entryType"),
@@ -608,18 +605,21 @@ function render() {
 
   const totals = getTotalsForMonth(month);
 
-  els.kpiIncome.textContent = formatCurrency(totals.income);
-  els.kpiExpense.textContent = formatCurrency(totals.expense);
-  els.kpiInvest.textContent = formatCurrency(totals.investment);
-  els.kpiCashflow.textContent = formatCurrency(totals.cashflow);
-  els.kpiAssets.textContent = formatCurrency(totals.assets);
-  els.kpiAssetGoal.textContent = formatCurrency(totals.goal);
-  els.kpiPassiveCf.textContent = formatCurrency(totals.passiveCf);
-  els.kpiPassiveIncome.textContent = formatCurrency(totals.passiveIncome);
+  setKpiWithYearly(els.kpiIncome, totals.income);
+  setKpiWithYearly(els.kpiExpense, totals.expense);
+  setKpiWithYearly(els.kpiInvest, totals.investment);
+  setKpiWithYearly(els.kpiCashflow, totals.cashflow);
+  setKpiWithSideMeta(els.kpiAssets, totals.assets, [
+    { label: "Asset goal", value: totals.goal, reached: totals.assets >= totals.goal },
+    { label: "Asset prediction", value: totals.predikce, reached: totals.assets >= totals.predikce }
+  ]);
+  setKpiWithYearly(els.kpiPassiveCf, totals.passiveCf);
   els.kpiInvestIncomeRatio.textContent = formatPercent(totals.investIncomeRatio);
   els.kpiFreeCash.textContent = formatCurrency(totals.freeCash);
-  els.kpiPredikce.textContent = formatCurrency(totals.predikce);
-  els.kpiAssetChange.textContent = formatCurrency(totals.assetChange);
+  setKpiWithSideMeta(els.kpiAssetChange, totals.assetChange, [
+    { label: "Asset change goal", value: totals.assetGoal, reached: totals.assetChange >= totals.assetGoal },
+    { label: "Asset change prediction", value: totals.assetPrediction, reached: totals.assetChange >= totals.assetPrediction }
+  ]);
 
   renderLists(month);
   renderGoalsTable();
@@ -627,6 +627,21 @@ function render() {
   renderAssetChart();
   renderMacroChart();
   renderAssetMacroChart();
+}
+
+function setKpiWithYearly(element, monthlyValue) {
+  const yearlyValue = Number(monthlyValue || 0) * 12;
+  element.innerHTML = `${formatCurrency(monthlyValue)}<span class="kpi-yearly"><small>Yearly value</small><small>${formatCurrency(yearlyValue)}</small></span>`;
+}
+
+function setKpiWithSideMeta(element, mainValue, rows) {
+  const sideHtml = rows
+    .map((row) => {
+      const reachedClass = row.reached ? "kpi-meta-reached" : "kpi-meta-missed";
+      return `<small>${escapeHtml(row.label)}</small><small class="${reachedClass}">${formatCurrency(row.value)}</small>`;
+    })
+    .join("");
+  element.innerHTML = `${formatCurrency(mainValue)}<span class="kpi-side-meta">${sideHtml}</span>`;
 }
 
 function renderLists(month) {
@@ -1428,7 +1443,17 @@ function renderGoalsTable() {
   state.goalTimeline.forEach((month) => {
     ensureGoalMonth(month);
     const goalRow = state.monthGoals[month];
+    const totals = getTotalsForMonth(month);
     const year = month.slice(0, 4);
+    const isGoalReached = totals.assets >= Number(goalRow.goal || 0);
+    const isAssetGoalReached = totals.assetChange >= Number(goalRow.assetGoal || 0);
+    const isPredictionReached = totals.assets >= Number(goalRow.predikce || 0);
+    const isAssetPredictionReached = totals.assetChange >= Number(goalRow.assetPrediction || 0);
+    const shouldColorize = month <= currentMonth;
+    const goalClass = shouldColorize ? (isGoalReached ? "goal-reached" : "goal-missed") : "";
+    const assetGoalClass = shouldColorize ? (isAssetGoalReached ? "goal-reached" : "goal-missed") : "";
+    const predictionClass = shouldColorize ? (isPredictionReached ? "goal-reached" : "goal-missed") : "";
+    const assetPredictionClass = shouldColorize ? (isAssetPredictionReached ? "goal-reached" : "goal-missed") : "";
 
     if (year !== previousYear) {
       const yearHeader = document.createElement("tr");
@@ -1445,10 +1470,10 @@ function renderGoalsTable() {
     tr.className = `${yearClass} ${currentClass}`.trim();
     tr.innerHTML = `
       <td>${escapeHtml(month)}</td>
-      <td><input type="number" step="0.01" data-month="${month}" data-field="goal" value="${goalRow.goal || 0}" /></td>
-      <td><input type="number" step="0.01" data-month="${month}" data-field="assetGoal" value="${goalRow.assetGoal || 0}" /></td>
-      <td><input type="number" step="0.01" data-month="${month}" data-field="predikce" value="${goalRow.predikce || 0}" /></td>
-      <td><input type="number" step="0.01" data-month="${month}" data-field="assetPrediction" value="${goalRow.assetPrediction || 0}" /></td>
+      <td><input class="${goalClass}" type="number" step="0.01" data-month="${month}" data-field="goal" value="${goalRow.goal || 0}" /></td>
+      <td><input class="${assetGoalClass}" type="number" step="0.01" data-month="${month}" data-field="assetGoal" value="${goalRow.assetGoal || 0}" /></td>
+      <td><input class="${predictionClass}" type="number" step="0.01" data-month="${month}" data-field="predikce" value="${goalRow.predikce || 0}" /></td>
+      <td><input class="${assetPredictionClass}" type="number" step="0.01" data-month="${month}" data-field="assetPrediction" value="${goalRow.assetPrediction || 0}" /></td>
     `;
     els.goalTableBody.appendChild(tr);
   });
