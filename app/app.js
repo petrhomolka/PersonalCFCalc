@@ -168,6 +168,7 @@ async function boot() {
   initCurrencyUi();
   wireEvents();
   registerSW();
+  await refreshExchangeRates({ silent: true, auto: true });
   await seedHistoricalDataIfEmpty();
   render();
 }
@@ -999,7 +1000,18 @@ function getCurrencySelectOptions() {
   }));
 }
 
-async function refreshExchangeRates() {
+async function refreshExchangeRates(options = {}) {
+  const { silent = false, auto = false } = options;
+
+  if (auto && Number(state.settings.ratesUpdatedAt || 0) > 0) {
+    const ageMs = Date.now() - Number(state.settings.ratesUpdatedAt || 0);
+    const oneHour = 60 * 60 * 1000;
+    if (ageMs < oneHour) {
+      updateRatesStatus();
+      return;
+    }
+  }
+
   if (els.refreshRatesBtn) els.refreshRatesBtn.disabled = true;
   try {
     const [fiatResponse, cryptoResponse] = await Promise.all([
@@ -1047,10 +1059,10 @@ async function refreshExchangeRates() {
     state.settings.ratesUpdatedAt = Date.now();
 
     saveState();
-    updateRatesStatus("Rates updated.");
+    updateRatesStatus(silent ? "" : "Rates updated.");
     render();
   } catch {
-    updateRatesStatus("Rate refresh failed. Using saved rates.");
+    if (!silent) updateRatesStatus("Rate refresh failed. Using saved rates.");
   } finally {
     if (els.refreshRatesBtn) els.refreshRatesBtn.disabled = false;
   }
@@ -1065,7 +1077,10 @@ function updateRatesStatus(prefix = "") {
   }
 
   const timeText = new Date(updatedAt).toLocaleString("cs-CZ");
-  els.ratesStatus.textContent = `${prefix ? `${prefix} ` : ""}Last update: ${timeText}`;
+  const usd = Number(getRateToCzk("USD") || 0).toFixed(2);
+  const eur = Number(getRateToCzk("EUR") || 0).toFixed(2);
+  const btc = Number(getRateToCzk("BTC") || 0).toLocaleString("cs-CZ", { maximumFractionDigits: 0 });
+  els.ratesStatus.textContent = `${prefix ? `${prefix} ` : ""}Last update: ${timeText} | USD/CZK ${usd} | EUR/CZK ${eur} | BTC/CZK ${btc}`;
 }
 
 function renderAssetList(listEl, month, items) {
@@ -1085,7 +1100,7 @@ function renderAssetList(listEl, month, items) {
     const converted = getAssetValueInMainCurrency(item);
     const originalLine = assetCurrency === getMainCurrency()
       ? ""
-      : `<small>${formatCurrency(assetAmount, assetCurrency)}</small>`;
+      : `<small>${formatCurrency(assetAmount, assetCurrency, { maxFractionDigits: 4, minFractionDigits: 0 })}</small>`;
     li.innerHTML = `
       <span>${escapeHtml(item.name)} ${cashTag}</span>
       <span class="row-actions">
@@ -1195,7 +1210,7 @@ async function editAsset(month, id) {
     title: "Upravit asset",
     fields: [
       { key: "name", label: "Název asset", type: "text", value: item.name || "", required: true },
-      { key: "value", label: "Amount", type: "number", value: String(getAssetAmount(item) ?? ""), required: true },
+      { key: "value", label: "Amount", type: "number", value: String(getAssetAmount(item) ?? ""), required: true, step: "0.0001" },
       {
         key: "currency",
         label: "Měna",
@@ -1258,7 +1273,7 @@ function showEditModal({ title, fields, submitText = "Save" }) {
         const input = document.createElement("input");
         input.name = field.key;
         input.type = field.type === "number" ? "number" : field.type === "checkbox" ? "checkbox" : "text";
-        if (input.type === "number") input.step = "0.01";
+        if (input.type === "number") input.step = field.step || "0.01";
 
         if (input.type === "checkbox") {
           input.checked = Boolean(field.value);
@@ -2022,11 +2037,16 @@ function setStatus(message) {
   els.status.textContent = message;
 }
 
-function formatCurrency(value, currency = getMainCurrency()) {
+function formatCurrency(value, currency = getMainCurrency(), options = {}) {
   const numeric = Number(value || 0);
   const normalizedCurrency = normalizeCurrencyCode(currency);
-  const maxDigits = normalizedCurrency === "BTC" || normalizedCurrency === "ETH" ? 6 : 2;
-  const minDigits = normalizedCurrency === "BTC" || normalizedCurrency === "ETH" ? 2 : 0;
+  const defaultMaxDigits = normalizedCurrency === "BTC" || normalizedCurrency === "ETH" ? 6 : 2;
+  const maxDigits = Number.isFinite(Number(options.maxFractionDigits))
+    ? Number(options.maxFractionDigits)
+    : defaultMaxDigits;
+  const minDigits = Number.isFinite(Number(options.minFractionDigits))
+    ? Number(options.minFractionDigits)
+    : 0;
 
   try {
     return new Intl.NumberFormat("cs-CZ", {
