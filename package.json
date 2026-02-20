@@ -1,0 +1,21 @@
+{
+  "name": "personalfinance",
+  "version": "1.0.0",
+  "description": "- Lokální ukládání dat po měsících: `prijem`, `vydaje`, `investice`, `assets`.\r - Každá položka má název, částku a u položek příjem/výdaj/investice i typ `periodical` nebo `one-time`.\r - Všechny uložené položky (příjem, výdaj, investice, assets) lze následně upravit nebo smazat.\r - `periodical` položky se automaticky předvyplní do následujícího měsíce.\r - Goal od uživatele (target amount).\r - Dashboard se KPI + 4 grafy včetně makro metrik ze sheetu.\r - Import CSV (Google Sheet export) pro historické měsíční souhrny.\r - Export/Import JSON pro migraci na nový iPhone.\r - Při prvním spuštění se automaticky načte vestavěný soubor `app/assets/historical.csv` (pokud ještě nejsou importovaná historická data).\r - `Goals` tab je po měsících (včetně budoucích):\r \t- `Goal (real asset goal)`\r \t- `Asset change goal (Asset Goal)`\r \t- `Asset prediction (Predikce)`\r \t- `Asset change prediction (Asset prediction)`\r - V `Goals` tab jsou tlačítka:\r \t- `Add 1 future year`\r \t- `Remove last future year` (smaže jen poslední rok, který je celý v budoucnosti)",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "cap:sync": "npx cap sync",
+    "cap:copy": "npx cap copy",
+    "ios:open": "npx cap open ios",
+    "ios:sync": "npx cap sync ios"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/cli": "^8.1.0",
+    "@capacitor/core": "^8.1.0",
+    "@capacitor/ios": "^8.1.0"
+  }
+}

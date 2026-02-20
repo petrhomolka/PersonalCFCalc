@@ -36,6 +36,50 @@ Pak otevři:
 - Klikni `Share` -> `Add to Home Screen`.
 - App běží jako web app a data ukládá lokálně v iPhone (browser storage).
 
+## Native iPhone build (Capacitor + Xcode)
+Projekt je připravený pro Capacitor iOS wrapper (`ios/` složka už existuje).
+
+### 1) Co jde a nejde na Windows
+- Na Windows můžeš připravit project (`npm install`, `npm run ios:sync`).
+- Finální `.ipa` build + podpis pro App Store/TestFlight musí proběhnout na macOS v Xcode.
+
+### 2) Příprava na Macu
+V root složce projektu spusť:
+
+```bash
+npm install
+npm run ios:sync
+npm run ios:open
+```
+
+To otevře nativní iOS projekt v Xcode.
+
+### 3) Xcode nastavení (jednorázově)
+- V `App` target nastav `Bundle Identifier` (musí být unikátní).
+- `Signing & Capabilities` -> vyber svůj `Team`.
+- Zvyšte `Version` a `Build` při každém releasu.
+- Ověř minimální iOS verzi (`Deployment Target`) podle potřeby.
+
+### 4) Test na zařízení
+- Připoj iPhone k Macu.
+- V Xcode vyber zařízení a dej `Run`.
+- Ověř import/export JSON, načtení `historical.csv`, grafy a ukládání dat.
+
+### 5) TestFlight / App Store Connect
+- Xcode: `Product` -> `Archive`.
+- V Organizer: `Distribute App` -> `App Store Connect` -> `Upload`.
+- V App Store Connect vytvoř app záznam (pokud není), doplň metadata a přidej build do TestFlight.
+- Po schválení interního/externího testování můžeš build distribuovat testerům.
+
+### 6) Aktualizace web části po změnách
+Po každé změně v `app/` spusť:
+
+```bash
+npm run ios:sync
+```
+
+Pak znovu buildni/archivuj v Xcode.
+
 ## Přenos na nový iPhone
 - Ve starém iPhone: `Data` -> `Export JSON`.
 - Soubor přenes (AirDrop/iCloud).
