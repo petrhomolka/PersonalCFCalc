@@ -136,8 +136,6 @@ const els = {
   incomeChart: document.getElementById("incomeChart"),
   exportJsonBtn: document.getElementById("exportJsonBtn"),
   importJsonInput: document.getElementById("importJsonInput"),
-  importCsvInput: document.getElementById("importCsvInput"),
-  reimportHistoricalBtn: document.getElementById("reimportHistoricalBtn"),
   resetBtn: document.getElementById("resetBtn"),
   status: document.getElementById("status")
 };
@@ -170,56 +168,7 @@ async function boot() {
   wireEvents();
   registerSW();
   await refreshExchangeRates({ silent: true, auto: true });
-  await seedHistoricalDataIfEmpty();
   render();
-}
-
-async function seedHistoricalDataIfEmpty() {
-  if (!shouldSeedHistoricalData()) return;
-
-  try {
-    const response = await fetch("./assets/historical.csv", { cache: "no-store" });
-    if (!response.ok) return;
-    const text = await response.text();
-    const rows = parseCsv(text);
-    if (rows.length < 2) return;
-
-    clearImportedSummaryData();
-    const parsedCount = hydrateFromSheetRows(rows);
-    if (parsedCount > 0) {
-      state.historicalImportVersion = HISTORICAL_IMPORT_VERSION;
-      saveState();
-      setStatus(`Historical data auto-imported (${parsedCount} months).`);
-    } else {
-      setStatus("Historical CSV found, but months could not be parsed.");
-    }
-  } catch {
-    setStatus("Automatic historical data import failed (run app via HTTP server or import CSV manually in Data).\n");
-  }
-}
-
-function shouldSeedHistoricalData() {
-  if (Number(state.historicalImportVersion || 0) < HISTORICAL_IMPORT_VERSION) return true;
-
-  const summaries = state.importedSummaries || {};
-  const months = Object.keys(summaries);
-  if (months.length === 0) return true;
-
-  const likelyOldBrokenMapping = months.length >= 6 && months.filter((month) => {
-    const row = summaries[month] || {};
-    const income = Number(row.income || 0);
-    const ratio = Number(row.investIncomeRatio || 0);
-    return income > 0 && income < 1000 && ratio > 100;
-  }).length >= Math.ceil(months.length * 0.4);
-
-  if (likelyOldBrokenMapping) return true;
-
-  const hasAnyValue = months.some((month) => {
-    const row = summaries[month] || {};
-    return Object.values(row).some((value) => Number(value) !== 0);
-  });
-
-  return !hasAnyValue;
 }
 
 function wireEvents() {
@@ -287,39 +236,12 @@ function wireEvents() {
 
   els.exportJsonBtn.addEventListener("click", exportJson);
   els.importJsonInput.addEventListener("change", importJson);
-  els.importCsvInput.addEventListener("change", importCsvSheet);
-  els.reimportHistoricalBtn.addEventListener("click", reimportHistoricalData);
 
   els.resetBtn.addEventListener("click", () => {
     if (!confirm("Do you really want to delete all local data?")) return;
     localStorage.removeItem(STORAGE_KEY);
     location.reload();
   });
-}
-
-async function reimportHistoricalData() {
-  try {
-    const response = await fetch("./assets/historical.csv", { cache: "no-store" });
-    if (!response.ok) {
-      setStatus("Cannot load built-in historical.csv.");
-      return;
-    }
-    const text = await response.text();
-    const rows = parseCsv(text);
-    if (rows.length < 2) {
-      setStatus("Built-in historical.csv is empty.");
-      return;
-    }
-
-    clearImportedSummaryData();
-    const parsedCount = hydrateFromSheetRows(rows);
-    state.historicalImportVersion = HISTORICAL_IMPORT_VERSION;
-    saveState();
-    render();
-    setStatus(`Historical data re-imported (${parsedCount} months).`);
-  } catch {
-    setStatus("Historical data re-import failed.");
-  }
 }
 
 function clearImportedSummaryData() {
@@ -2215,31 +2137,6 @@ async function importJson(event) {
     location.reload();
   } catch {
     setStatus("Error importing JSON.");
-  } finally {
-    event.target.value = "";
-  }
-}
-
-async function importCsvSheet(event) {
-  const file = event.target && event.target.files ? event.target.files[0] : null;
-  if (!file) return;
-
-  try {
-    const text = await file.text();
-    const rows = parseCsv(text);
-    if (rows.length < 2) throw new Error("CSV bez dat");
-
-    const parsedCount = hydrateFromSheetRows(rows);
-    state.historicalImportVersion = HISTORICAL_IMPORT_VERSION;
-    saveState();
-    render();
-    if (parsedCount > 0) {
-      setStatus(`CSV import completed. Months found: ${parsedCount}.`);
-    } else {
-      setStatus("CSV loaded, but no months were recognized (check month column format).\n");
-    }
-  } catch {
-    setStatus("Error importing CSV.");
   } finally {
     event.target.value = "";
   }
