@@ -1682,9 +1682,6 @@ function getTotalsForMonth(month) {
   const localExpense = sumBy(monthData.expense, "amount");
   const localInvestment = sumBy(monthData.investment, "amount");
   const localAssets = (monthData.assets || []).reduce((sum, item) => sum + getAssetValueInMainCurrency(item), 0);
-  const localFreeCash = monthData.assets
-    .filter((item) => isCashAsset(item))
-    .reduce((sum, item) => sum + getAssetValueInMainCurrency(item), 0);
   const localPassiveIncome = (monthData.income || [])
     .filter((item) => Boolean(item.isPassive))
     .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
@@ -1701,7 +1698,6 @@ function getTotalsForMonth(month) {
   const importedPredikce = convertAmountToMainCurrency(imported.predikce || 0, "CZK");
   const importedAssetGoal = convertAmountToMainCurrency(imported.assetGoal || 0, "CZK");
   const importedAssetPrediction = convertAmountToMainCurrency(imported.assetPrediction || 0, "CZK");
-  const importedFreeCash = convertAmountToMainCurrency(imported.freeCash || 0, "CZK");
   const importedCashFlow = convertAmountToMainCurrency(imported.cashFlow || 0, "CZK");
   const importedPassiveCf = convertAmountToMainCurrency(imported.passiveCf || 0, "CZK");
   const importedPassiveIncome = convertAmountToMainCurrency(imported.passiveIncome || 0, "CZK");
@@ -1716,6 +1712,7 @@ function getTotalsForMonth(month) {
   const hasLocalCashflowInputs = (monthData.income || []).some((item) => item && item.source !== "imported-csv-summary")
     || (monthData.expense || []).some((item) => item && item.source !== "imported-csv-summary");
   const derivedCashflow = income - expense;
+  const derivedFreeCash = income - expense - investment;
   const cashflow = hasLocalCashflowInputs ? derivedCashflow : importedCashFlow;
 
   return {
@@ -1730,7 +1727,7 @@ function getTotalsForMonth(month) {
     assetChange: assets - previousAssets,
     assetGoal: Number(monthGoal.assetGoal || importedAssetGoal || 0),
     assetPrediction: Number(monthGoal.assetPrediction || importedAssetPrediction || 0),
-    freeCash: localFreeCash || importedFreeCash || 0,
+    freeCash: derivedFreeCash,
     passiveCf: importedPassiveCf || 0,
     passiveIncome,
     investIncomeRatio: calculateInvestmentIncomeRatio(month)
@@ -2398,7 +2395,6 @@ function hydrateFromSheetRows(rows) {
     const goal = parseMoney(row[monthIndex + 2]);
     const notes = (row[monthIndex + 3] || "").trim();
     const predikce = parseMoney(row[monthIndex + 4]);
-    const freeCash = parseFreeCash(row, monthIndex);
     const assetChange = parseMoney(row[monthIndex + 6]);
     const assetGoal = parseMoney(row[monthIndex + 7]);
     const assetPrediction = parseMoney(row[monthIndex + 8]);
@@ -2418,7 +2414,6 @@ function hydrateFromSheetRows(rows) {
       assetChange,
       assetGoal,
       assetPrediction,
-      freeCash,
       passiveCf,
       passiveIncome,
       investIncomeRatio,
@@ -2442,22 +2437,6 @@ function hydrateFromSheetRows(rows) {
   }
 
   return count;
-}
-
-function parseFreeCash(row, monthIndex) {
-  const possibleLabels = [
-    row[monthIndex - 5],
-    row[monthIndex - 4],
-    row[monthIndex - 3]
-  ];
-
-  const hasFreeCashLabel = possibleLabels.some((value) => String(value || "").toLowerCase().includes("free cash"));
-  if (!hasFreeCashLabel) return 0;
-
-  const preferredValue = parseMoney(row[monthIndex - 2]);
-  if (preferredValue !== 0) return preferredValue;
-
-  return parseMoney(row[monthIndex - 3]);
 }
 
 function upsertImportedMonthlyRows(month, summary) {
