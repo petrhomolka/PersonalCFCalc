@@ -480,6 +480,18 @@ li small { color: var(--muted); }
   }
 }
 
+@media (max-width: 520px) {
+  #assetList .row-actions {
+    display: grid;
+    justify-items: end;
+    gap: 4px;
+  }
+
+  #assetList .row-actions button {
+    min-width: 78px;
+  }
+}
+
 .goals-table th,
 .goals-table td {
   border-bottom: 1px solid #1e2a40;
