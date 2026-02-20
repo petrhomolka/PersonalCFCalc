@@ -665,24 +665,28 @@ function renderEntryList(listEl, month, type, items) {
       ? '<small class="item-badge periodic-badge">PERIODICAL</small>'
       : '<small class="item-badge onetime-badge">ONE-TIME</small>';
     const passiveBadge = type === "income" && item.isPassive
-      ? '<small class="item-badge periodic-badge">PASSIVE</small>'
+      ? '<small class="item-badge passive-badge">PASSIVE</small>'
       : "";
     const categoryLine = type === "expense" && normalizeExpenseCategory(item.category)
       ? `<small class="item-category-line">${escapeHtml(normalizeExpenseCategory(item.category))}</small>`
       : "";
-    const autoText = item.carriedFrom ? `<small>(auto z ${item.carriedFrom})</small>` : "";
+    const autoText = item.carriedFrom ? `<small class="item-auto-line">(auto z ${item.carriedFrom})</small>` : "";
     li.innerHTML = `
-      <span>
-        ${escapeHtml(item.name)}
-        ${item.periodic !== undefined ? periodicBadge : ""}
-        ${passiveBadge}
+      <span class="entry-main">
+        <span class="entry-name">${escapeHtml(item.name)}</span>
+        <span class="entry-meta-line">
+          ${item.periodic !== undefined ? periodicBadge : ""}
+          ${passiveBadge}
+        </span>
         ${categoryLine}
         ${autoText}
       </span>
-      <span class="row-actions">
-        <strong>${formatCurrency(item.amount || 0)}</strong>
-        <button data-action="edit-entry" data-month="${month}" data-type="${type}" data-id="${item.id}" type="button">Upravit</button>
-        <button data-action="delete-entry" data-month="${month}" data-type="${type}" data-id="${item.id}" type="button" class="danger">Smazat</button>
+      <span class="entry-actions">
+        <strong class="entry-amount">${formatCurrency(item.amount || 0)}</strong>
+        <span class="entry-buttons">
+          <button data-action="edit-entry" data-month="${month}" data-type="${type}" data-id="${item.id}" type="button">Upravit</button>
+          <button data-action="delete-entry" data-month="${month}" data-type="${type}" data-id="${item.id}" type="button" class="danger">Smazat</button>
+        </span>
       </span>
     `;
     listEl.appendChild(li);
@@ -796,8 +800,11 @@ function onEntryTypeChange() {
   if (els.entryPassiveWrap) {
     els.entryPassiveWrap.hidden = !isIncome;
   }
-  if (!isIncome && els.entryPassive) {
-    els.entryPassive.checked = false;
+  if (els.entryPassive) {
+    els.entryPassive.disabled = !isIncome;
+    if (!isIncome) {
+      els.entryPassive.checked = false;
+    }
   }
 }
 

@@ -208,11 +208,49 @@ li {
 li.periodic-item {
   border-left: 3px solid var(--accent2);
   padding-left: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 10px;
 }
 
 li.one-time-item {
   border-left: 3px solid #64748b;
   padding-left: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 10px;
+}
+
+.entry-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.entry-name {
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.entry-meta-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.78rem;
+}
+
+.entry-meta-line .item-badge {
+  margin-left: 0;
+  font-size: 0.78rem;
+}
+
+.passive-badge {
+  color: #34d399;
 }
 
 li.entry-section-header {
@@ -242,6 +280,12 @@ li.entry-section-header {
   margin-top: 2px;
   color: #c4b5fd;
   font-weight: 600;
+  font-size: 0.78rem;
+}
+
+.item-auto-line {
+  display: block;
+  margin-top: 2px;
 }
 
 li.expense-summary {
@@ -288,6 +332,29 @@ li small { color: var(--muted); }
 }
 
 .row-actions button {
+  padding: 4px 8px;
+  font-size: 0.76rem;
+}
+
+.entry-actions {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: start;
+  gap: 8px;
+}
+
+.entry-amount {
+  white-space: nowrap;
+  align-self: start;
+}
+
+.entry-buttons {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.entry-buttons button {
   padding: 4px 8px;
   font-size: 0.76rem;
 }
