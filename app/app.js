@@ -86,6 +86,7 @@ const initialState = {
 const state = loadState();
 let nextMonthArmTimeout = null;
 let isNextMonthArmed = false;
+let viewportRenderTimeout = null;
 const els = {
   runtimeError: document.getElementById("runtimeError"),
   tabs: document.getElementById("tabs"),
@@ -242,6 +243,16 @@ function wireEvents() {
     localStorage.removeItem(STORAGE_KEY);
     location.reload();
   });
+
+  const onViewportChange = () => {
+    if (viewportRenderTimeout) clearTimeout(viewportRenderTimeout);
+    viewportRenderTimeout = setTimeout(() => {
+      render();
+    }, 120);
+  };
+
+  window.addEventListener("resize", onViewportChange);
+  window.addEventListener("orientationchange", onViewportChange);
 }
 
 function clearImportedSummaryData() {
@@ -1793,21 +1804,28 @@ function buildTrendlineFromRealValues(realValues, targetLength) {
   });
 }
 
+function getXAxisLabelStep(labelsCount, plotWidthCssPx, minSpacingCssPx) {
+  if (labelsCount <= 2) return 1;
+  const slots = Math.max(2, Math.floor(plotWidthCssPx / minSpacingCssPx));
+  return Math.max(1, Math.ceil((labelsCount - 1) / (slots - 1)));
+}
+
 function drawCashChart(canvas, labels, data) {
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
   const cssWidth = Math.max(1, canvas.clientWidth || 0);
   const cssHeight = Math.max(1, canvas.clientHeight || Number(canvas.getAttribute("height")) || 220);
+  const isCompact = cssWidth < 430;
   const width = canvas.width = Math.floor(cssWidth * dpr);
   const height = canvas.height = Math.floor(cssHeight * dpr);
 
   ctx.clearRect(0, 0, width, height);
   if (!labels.length) return;
 
-  const left = 86 * dpr;
+  const left = (isCompact ? 68 : 86) * dpr;
   const right = 28 * dpr;
   const top = 30 * dpr;
-  const bottom = 34 * dpr;
+  const bottom = (isCompact ? 42 : 34) * dpr;
   const plotWidth = Math.max(1, width - left - right);
   const plotHeight = Math.max(1, height - top - bottom);
 
@@ -1914,7 +1932,7 @@ function drawCashChart(canvas, labels, data) {
 
   ctx.fillStyle = "#8ea2c2";
   ctx.textBaseline = "top";
-  const labelStep = Math.max(1, Math.ceil(labels.length / 10));
+  const labelStep = getXAxisLabelStep(labels.length, plotWidth / dpr, isCompact ? 76 : 58);
   labels.forEach((month, index) => {
     const isLast = index === labels.length - 1;
     if (!isLast && index % labelStep !== 0) return;
@@ -1963,17 +1981,20 @@ function drawCashChart(canvas, labels, data) {
 function drawLineChart(canvas, labels, series, options = {}) {
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
-  const width = canvas.width = canvas.clientWidth * dpr;
-  const height = canvas.height = canvas.clientHeight * dpr;
+  const cssWidth = Math.max(1, canvas.clientWidth || Number(canvas.getAttribute("width")) || 300);
+  const cssHeight = Math.max(1, canvas.clientHeight || Number(canvas.getAttribute("height")) || 220);
+  const isCompact = cssWidth < 430;
+  const width = canvas.width = Math.floor(cssWidth * dpr);
+  const height = canvas.height = Math.floor(cssHeight * dpr);
 
   ctx.clearRect(0, 0, width, height);
 
   if (!labels.length) return;
 
-  const left = 86 * dpr;
+  const left = (isCompact ? 68 : 86) * dpr;
   const right = 24 * dpr;
   const top = 30 * dpr;
-  const bottom = 34 * dpr;
+  const bottom = (isCompact ? 42 : 34) * dpr;
   const plotWidth = Math.max(1, width - left - right);
   const plotHeight = Math.max(1, height - top - bottom);
 
@@ -2005,7 +2026,7 @@ function drawLineChart(canvas, labels, series, options = {}) {
     return top + plotHeight - (ratio * plotHeight);
   };
 
-  const yTicks = 5;
+  const yTicks = isCompact ? 4 : 5;
   const yAxisType = options.yAxisType === "percent" ? "percent" : "currency";
   const hasYAxisLabelOption = Object.prototype.hasOwnProperty.call(options, "yAxisLabel");
   const yAxisLabel = hasYAxisLabelOption
@@ -2073,7 +2094,7 @@ function drawLineChart(canvas, labels, series, options = {}) {
   ctx.fillStyle = "#8ea2c2";
   ctx.font = `${10 * dpr}px sans-serif`;
   ctx.textBaseline = "top";
-  const labelStep = Math.max(1, Math.ceil(labels.length / 10));
+  const labelStep = getXAxisLabelStep(labels.length, plotWidth / dpr, isCompact ? 76 : 58);
   labels.forEach((month, index) => {
     const isLast = index === labels.length - 1;
     if (!isLast && index % labelStep !== 0) return;
