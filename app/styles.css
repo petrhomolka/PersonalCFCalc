@@ -494,9 +494,26 @@ li small { color: var(--muted); }
   }
 
   .kpi-grid p {
-    padding-right: 130px;
-    display: block;
-    gap: 0;
+    padding-right: 0;
+    display: grid;
+    gap: 6px;
+  }
+
+  .kpi-grid p .kpi-side-values,
+  .kpi-grid p .kpi-yearly,
+  .kpi-grid p .kpi-side-meta {
+    position: static;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    justify-self: start;
+    text-align: left;
+    line-height: 1.25;
+  }
+
+  .kpi-grid p .kpi-subvalue {
+    margin-bottom: 4px;
+    text-align: left;
   }
 
   #dashboard .card canvas {
