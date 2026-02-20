@@ -2527,15 +2527,7 @@ function escapeHtml(text) {
 function registerSW() {
   if (!("serviceWorker" in navigator)) return;
 
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    registrations.forEach((registration) => registration.unregister());
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
   });
-
-  if (window.caches && caches.keys) {
-    caches.keys().then((keys) => {
-      keys.forEach((key) => {
-        if (key.indexOf("pf-app-") === 0) caches.delete(key);
-      });
-    });
-  }
 }
