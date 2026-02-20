@@ -1,5 +1,5 @@
 const STORAGE_KEY = "pf_app_v1";
-const APP_VERSION = "v1.0.1";
+const APP_VERSION = "v1.0.2";
 const HISTORICAL_IMPORT_VERSION = 3;
 const DEFAULT_MAIN_CURRENCY = "CZK";
 const MAJOR_CRYPTO_CURRENCIES = [
