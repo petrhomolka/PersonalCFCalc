@@ -10,6 +10,14 @@
 - Import CSV (Google Sheet export) pro historické měsíční souhrny.
 - Export/Import JSON pro migraci na nový iPhone.
 - Při prvním spuštění se automaticky načte vestavěný soubor `app/assets/historical.csv` (pokud ještě nejsou importovaná historická data).
+- `Goals` tab je po měsících (včetně budoucích):
+	- `Goal (real asset goal)`
+	- `Asset change goal (Asset Goal)`
+	- `Asset prediction (Predikce)`
+	- `Asset change prediction (Asset prediction)`
+- V `Goals` tab jsou tlačítka:
+	- `Add 1 future year`
+	- `Remove last future year` (smaže jen poslední rok, který je celý v budoucnosti)
 
 ## Spuštění lokálně (Windows)
 V PowerShellu z kořene projektu:

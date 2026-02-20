@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0f172a" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="manifest" href="./manifest.json" />
     <link rel="stylesheet" href="./styles.css" />
     <title>Personal Finance</title>
@@ -14,6 +15,7 @@
         <h1>Personal Finance</h1>
         <div id="activeMonthLabel" class="month-chip"></div>
       </header>
+      <div id="runtimeError" class="runtime-error" hidden></div>
 
       <nav class="tabs" id="tabs">
         <button data-tab="dashboard" class="tab active">Dashboard</button>
@@ -130,20 +132,25 @@
 
       <section id="goals" class="panel">
         <article class="card">
-          <h3>User Goal</h3>
-          <form id="goalForm" class="stack">
-            <label>Goal name
-              <input id="goalName" placeholder="např. Asset 2M" required />
-            </label>
-            <label>Target amount (Kč)
-              <input id="goalTarget" type="number" step="0.01" required />
-            </label>
-            <button type="submit">Save goal</button>
-          </form>
-        </article>
-        <article class="card">
-          <h3>Goals</h3>
-          <ul id="goalList"></ul>
+          <h3>Goals by Month</h3>
+          <div class="row-actions goals-actions">
+            <button id="addYearBtn" type="button">Add 1 future year</button>
+            <button id="removeYearBtn" type="button" class="danger">Remove last future year</button>
+          </div>
+          <div class="goals-table-wrap">
+            <table class="goals-table">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Assets Goal</th>
+                  <th>Assets Change Goal</th>
+                  <th>Assets Prediction</th>
+                  <th>Assets Change Prediction</th>
+                </tr>
+              </thead>
+              <tbody id="goalTableBody"></tbody>
+            </table>
+          </div>
         </article>
       </section>
 

@@ -1,16 +1,28 @@
 const STORAGE_KEY = "pf_app_v1";
 const HISTORICAL_IMPORT_VERSION = 2;
 
+function createId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function cloneState(value) {
+  if (typeof structuredClone === "function") return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
 const initialState = {
   version: 1,
   historicalImportVersion: 0,
-  goals: [],
   months: {},
-  importedSummaries: {}
+  importedSummaries: {},
+  monthGoals: {},
+  goalTimeline: []
 };
 
 const state = loadState();
 const els = {
+  runtimeError: document.getElementById("runtimeError"),
   tabs: document.getElementById("tabs"),
   panels: document.querySelectorAll(".panel"),
   monthSelect: document.getElementById("monthSelect"),
@@ -39,10 +51,9 @@ const els = {
   assetName: document.getElementById("assetName"),
   assetValue: document.getElementById("assetValue"),
   assetList: document.getElementById("assetList"),
-  goalForm: document.getElementById("goalForm"),
-  goalName: document.getElementById("goalName"),
-  goalTarget: document.getElementById("goalTarget"),
-  goalList: document.getElementById("goalList"),
+  goalTableBody: document.getElementById("goalTableBody"),
+  addYearBtn: document.getElementById("addYearBtn"),
+  removeYearBtn: document.getElementById("removeYearBtn"),
   trendChart: document.getElementById("trendChart"),
   assetChart: document.getElementById("assetChart"),
   macroChart: document.getElementById("macroChart"),
@@ -55,7 +66,21 @@ const els = {
   status: document.getElementById("status")
 };
 
+window.addEventListener("error", (event) => {
+  showRuntimeError(`Runtime error: ${event.message}`);
+});
+
+window.addEventListener("unhandledrejection", () => {
+  showRuntimeError("Unhandled promise rejection in app.");
+});
+
 boot();
+
+function showRuntimeError(message) {
+  if (!els.runtimeError) return;
+  els.runtimeError.hidden = false;
+  els.runtimeError.textContent = message;
+}
 
 async function boot() {
   const now = new Date();
@@ -63,6 +88,7 @@ async function boot() {
   els.monthSelect.value = month;
 
   ensureMonth(els.monthSelect.value);
+  ensureGoalTimeline();
   wireEvents();
   registerSW();
   await seedHistoricalDataIfEmpty();
@@ -148,18 +174,9 @@ function wireEvents() {
     render();
   });
 
-  els.goalForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    state.goals.push({
-      id: crypto.randomUUID(),
-      name: els.goalName.value.trim(),
-      target: Number(els.goalTarget.value),
-      createdAt: Date.now()
-    });
-    saveState();
-    els.goalForm.reset();
-    render();
-  });
+  els.addYearBtn.addEventListener("click", addFutureYearGoals);
+  els.removeYearBtn.addEventListener("click", removeLastFutureYearGoals);
+  els.goalTableBody.addEventListener("input", onGoalTableInputChange);
 
   els.exportJsonBtn.addEventListener("click", exportJson);
   els.importJsonInput.addEventListener("change", importJson);
@@ -224,7 +241,7 @@ function addEntry({ month, type, name, amount, periodic }) {
   if (!month || !name || Number.isNaN(amount)) return;
   ensureMonth(month);
 
-  const id = crypto.randomUUID();
+  const id = createId();
   const item = { id, name, amount, periodic, createdAt: Date.now() };
 
   if (type === "income") state.months[month].income.push(item);
@@ -238,7 +255,7 @@ function addAsset({ month, name, value }) {
   if (!month || !name || Number.isNaN(value)) return;
   ensureMonth(month);
   state.months[month].assets.push({
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     value,
     createdAt: Date.now()
@@ -269,7 +286,7 @@ function carryPeriodicFromPreviousMonth(month) {
     const periodicItems = state.months[previous][type].filter((item) => item.periodic);
     periodicItems.forEach((item) => {
       state.months[month][type].push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: item.name,
         amount: item.amount,
         periodic: true,
@@ -299,7 +316,7 @@ function syncPeriodicPrefill(month) {
       if (existingKeys.has(key)) return;
 
       current.push({
-        id: crypto.randomUUID(),
+        id: createId(),
         name: item.name,
         amount: item.amount,
         periodic: true,
@@ -329,15 +346,13 @@ function render() {
   els.activeMonthLabel.textContent = month;
 
   const totals = getTotalsForMonth(month);
-  const userGoal = state.goals[state.goals.length - 1]?.target || 0;
-  const assetGoalKpi = totals.assetGoal || userGoal;
 
   els.kpiIncome.textContent = formatCurrency(totals.income);
   els.kpiExpense.textContent = formatCurrency(totals.expense);
   els.kpiInvest.textContent = formatCurrency(totals.investment);
   els.kpiCashflow.textContent = formatCurrency(totals.cashflow);
   els.kpiAssets.textContent = formatCurrency(totals.assets);
-  els.kpiAssetGoal.textContent = formatCurrency(assetGoalKpi);
+  els.kpiAssetGoal.textContent = formatCurrency(totals.assetGoal);
   els.kpiPassiveCf.textContent = formatCurrency(totals.passiveCf);
   els.kpiPassiveIncome.textContent = formatCurrency(totals.passiveIncome);
   els.kpiInvestIncomeRatio.textContent = formatPercent(totals.investIncomeRatio);
@@ -346,7 +361,7 @@ function render() {
   els.kpiAssetChange.textContent = formatCurrency(totals.assetChange);
 
   renderLists(month);
-  renderGoals();
+  renderGoalsTable();
   renderTrendChart();
   renderAssetChart();
   renderMacroChart();
@@ -450,7 +465,7 @@ function onRowActionClick(event) {
 }
 
 function editEntry(month, type, id) {
-  const list = state.months[month]?.[type] || [];
+  const list = state.months[month] && state.months[month][type] ? state.months[month][type] : [];
   const item = list.find((row) => row.id === id);
   if (!item) return;
 
@@ -480,7 +495,7 @@ function deleteEntry(month, type, id) {
 }
 
 function editAsset(month, id) {
-  const list = state.months[month]?.assets || [];
+  const list = state.months[month] && state.months[month].assets ? state.months[month].assets : [];
   const item = list.find((row) => row.id === id);
   if (!item) return;
 
@@ -507,20 +522,142 @@ function deleteAsset(month, id) {
   render();
 }
 
-function renderGoals() {
-  els.goalList.innerHTML = "";
-  if (!state.goals.length) {
-    const li = document.createElement("li");
-    li.innerHTML = "<small>Zatím bez goal</small>";
-    els.goalList.appendChild(li);
+function renderGoalsTable() {
+  ensureGoalTimeline();
+  els.goalTableBody.innerHTML = "";
+  const currentMonth = getCurrentMonthKey();
+  let previousYear = "";
+
+  state.goalTimeline.forEach((month) => {
+    ensureGoalMonth(month);
+    const goalRow = state.monthGoals[month];
+    const year = month.slice(0, 4);
+
+    if (year !== previousYear) {
+      const yearHeader = document.createElement("tr");
+      yearHeader.className = "year-separator";
+      yearHeader.innerHTML = `<td colspan="5">Year ${escapeHtml(year)}</td>`;
+      els.goalTableBody.appendChild(yearHeader);
+      previousYear = year;
+    }
+
+    const yearNumber = Number(year);
+    const yearClass = yearNumber % 2 === 0 ? "year-even" : "year-odd";
+    const currentClass = month === currentMonth ? "is-current-month" : "";
+    const tr = document.createElement("tr");
+    tr.className = `${yearClass} ${currentClass}`.trim();
+    tr.innerHTML = `
+      <td>${escapeHtml(month)}</td>
+      <td><input type="number" step="0.01" data-month="${month}" data-field="goal" value="${goalRow.goal || 0}" /></td>
+      <td><input type="number" step="0.01" data-month="${month}" data-field="assetGoal" value="${goalRow.assetGoal || 0}" /></td>
+      <td><input type="number" step="0.01" data-month="${month}" data-field="predikce" value="${goalRow.predikce || 0}" /></td>
+      <td><input type="number" step="0.01" data-month="${month}" data-field="assetPrediction" value="${goalRow.assetPrediction || 0}" /></td>
+    `;
+    els.goalTableBody.appendChild(tr);
+  });
+}
+
+function getCurrentMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function onGoalTableInputChange(event) {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement)) return;
+  const month = input.dataset.month;
+  const field = input.dataset.field;
+  if (!month || !field) return;
+
+  ensureGoalMonth(month);
+  state.monthGoals[month][field] = Number(input.value || 0);
+  saveState();
+  render();
+}
+
+function ensureGoalMonth(month) {
+  if (!state.monthGoals[month]) {
+    const imported = state.importedSummaries[month] || {};
+    state.monthGoals[month] = {
+      goal: Number(imported.goal || 0),
+      assetGoal: Number(imported.assetGoal || 0),
+      predikce: Number(imported.predikce || 0),
+      assetPrediction: Number(imported.assetPrediction || 0)
+    };
+  }
+
+  if (!state.goalTimeline.includes(month)) {
+    state.goalTimeline.push(month);
+    state.goalTimeline.sort();
+  }
+}
+
+function ensureGoalTimeline() {
+  if (!Array.isArray(state.goalTimeline)) state.goalTimeline = [];
+
+  const months = Object.keys(state.importedSummaries)
+    .concat(Object.keys(state.months))
+    .concat(Object.keys(state.monthGoals || {}))
+    .filter((value, index, arr) => arr.indexOf(value) === index)
+    .sort();
+
+  if (!state.goalTimeline.length) {
+    state.goalTimeline = months;
+  } else {
+    months.forEach((month) => {
+      if (!state.goalTimeline.includes(month)) state.goalTimeline.push(month);
+    });
+    state.goalTimeline.sort();
+  }
+
+  state.goalTimeline.forEach((month) => ensureGoalMonth(month));
+}
+
+function addFutureYearGoals() {
+  ensureGoalTimeline();
+  const lastMonth = state.goalTimeline[state.goalTimeline.length - 1] || els.monthSelect.value;
+  const [yearText, monthText] = lastMonth.split("-");
+  let year = Number(yearText);
+  let month = Number(monthText);
+  if (!year || !month) return;
+
+  for (let index = 0; index < 12; index += 1) {
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+    const nextMonth = `${year}-${String(month).padStart(2, "0")}`;
+    ensureGoalMonth(nextMonth);
+  }
+
+  saveState();
+  render();
+}
+
+function removeLastFutureYearGoals() {
+  ensureGoalTimeline();
+  if (!state.goalTimeline.length) return;
+
+  const today = new Date();
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  const lastMonth = state.goalTimeline[state.goalTimeline.length - 1];
+  const lastYear = Number(lastMonth.slice(0, 4));
+
+  const yearMonths = state.goalTimeline.filter((month) => Number(month.slice(0, 4)) === lastYear);
+  const hasNonFuture = yearMonths.some((month) => month <= currentMonth);
+  if (hasNonFuture) {
+    setStatus(`Rok ${lastYear} nelze smazat, protože už probíhá nebo je v minulosti.`);
     return;
   }
 
-  state.goals.forEach((goal) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<span>${escapeHtml(goal.name)}</span><strong>${formatCurrency(goal.target)}</strong>`;
-    els.goalList.appendChild(li);
+  state.goalTimeline = state.goalTimeline.filter((month) => Number(month.slice(0, 4)) !== lastYear);
+  yearMonths.forEach((month) => {
+    delete state.monthGoals[month];
   });
+
+  saveState();
+  render();
 }
 
 function getTotalsForMonth(month) {
@@ -532,6 +669,8 @@ function getTotalsForMonth(month) {
   const localAssets = sumBy(monthData.assets, "value");
 
   const imported = state.importedSummaries[month] || {};
+  ensureGoalMonth(month);
+  const monthGoal = state.monthGoals[month] || {};
 
   const income = localIncome || imported.income || 0;
   const expense = localExpense || imported.expense || 0;
@@ -545,11 +684,11 @@ function getTotalsForMonth(month) {
     assets,
     cashflow: income - expense,
     realita: imported.realita || 0,
-    goal: imported.goal || 0,
-    predikce: imported.predikce || 0,
+    goal: Number(monthGoal.goal || imported.goal || 0),
+    predikce: Number(monthGoal.predikce || imported.predikce || 0),
     assetChange: imported.assetChange || 0,
-    assetGoal: imported.assetGoal || 0,
-    assetPrediction: imported.assetPrediction || 0,
+    assetGoal: Number(monthGoal.assetGoal || imported.assetGoal || 0),
+    assetPrediction: Number(monthGoal.assetPrediction || imported.assetPrediction || 0),
     passiveCf: imported.passiveCf || 0,
     passiveIncome: imported.passiveIncome || 0,
     investIncomeRatio: imported.investIncomeRatio || 0
@@ -574,11 +713,7 @@ function renderTrendChart() {
 function renderAssetChart() {
   const labels = getMonthAxis();
   const assets = labels.map((month) => getTotalsForMonth(month).assets);
-  const userGoal = state.goals[state.goals.length - 1]?.target || 0;
-  const goals = labels.map((month) => {
-    const importedGoal = getTotalsForMonth(month).assetGoal;
-    return importedGoal || userGoal;
-  });
+  const goals = labels.map((month) => getTotalsForMonth(month).assetGoal);
 
   drawLineChart(els.assetChart, labels, [
     { name: "Assets", values: assets, color: "#a78bfa" },
@@ -615,6 +750,7 @@ function renderAssetMacroChart() {
 function getMonthAxis() {
   const months = Object.keys(state.months)
     .concat(Object.keys(state.importedSummaries))
+    .concat(state.goalTimeline || [])
     .filter((value, index, arr) => arr.indexOf(value) === index)
     .sort();
   return months.slice(-24);
@@ -630,7 +766,7 @@ function drawLineChart(canvas, labels, series) {
   if (!labels.length) return;
 
   const padding = 34 * devicePixelRatio;
-  const allValues = series.flatMap((line) => line.values);
+  const allValues = series.reduce((acc, line) => acc.concat(line.values), []);
   const max = Math.max(...allValues, 1);
   const min = Math.min(...allValues, 0);
   const range = max - min || 1;
@@ -682,7 +818,7 @@ function exportJson() {
 }
 
 async function importJson(event) {
-  const file = event.target.files?.[0];
+  const file = event.target && event.target.files ? event.target.files[0] : null;
   if (!file) return;
   try {
     const text = await file.text();
@@ -699,7 +835,7 @@ async function importJson(event) {
 }
 
 async function importCsvSheet(event) {
-  const file = event.target.files?.[0];
+  const file = event.target && event.target.files ? event.target.files[0] : null;
   if (!file) return;
 
   try {
@@ -771,23 +907,13 @@ function hydrateFromSheetRows(rows) {
     };
 
     ensureMonth(month);
+    ensureGoalMonth(month);
+    state.monthGoals[month].goal = Number(goal || 0);
+    state.monthGoals[month].assetGoal = Number(assetGoal || 0);
+    state.monthGoals[month].predikce = Number(predikce || 0);
+    state.monthGoals[month].assetPrediction = Number(assetPrediction || 0);
     upsertImportedMonthlyRows(month, state.importedSummaries[month]);
     count += 1;
-  }
-
-  if (!state.goals.length) {
-    const lastMonth = Object.keys(state.importedSummaries).sort().slice(-1)[0];
-    if (lastMonth) {
-      const target = state.importedSummaries[lastMonth]?.assetGoal;
-      if (target) {
-        state.goals.push({
-          id: crypto.randomUUID(),
-          name: "Imported Asset Goal",
-          target,
-          createdAt: Date.now()
-        });
-      }
-    }
   }
 
   return count;
@@ -818,7 +944,7 @@ function upsertImportedEntry(list, name, amount) {
   }
 
   list.push({
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     amount,
     periodic: false,
@@ -837,7 +963,7 @@ function upsertImportedAsset(list, name, value) {
   }
 
   list.push({
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     value,
     source: "imported-csv-summary",
@@ -925,19 +1051,20 @@ function parsePercent(value) {
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return structuredClone(initialState);
+  if (!raw) return cloneState(initialState);
   try {
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return structuredClone(initialState);
+    if (!parsed || typeof parsed !== "object") return cloneState(initialState);
     return {
       version: 1,
       historicalImportVersion: Number(parsed.historicalImportVersion || 0),
-      goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       months: parsed.months && typeof parsed.months === "object" ? parsed.months : {},
-      importedSummaries: parsed.importedSummaries && typeof parsed.importedSummaries === "object" ? parsed.importedSummaries : {}
+      importedSummaries: parsed.importedSummaries && typeof parsed.importedSummaries === "object" ? parsed.importedSummaries : {},
+      monthGoals: parsed.monthGoals && typeof parsed.monthGoals === "object" ? parsed.monthGoals : {},
+      goalTimeline: Array.isArray(parsed.goalTimeline) ? parsed.goalTimeline : []
     };
   } catch {
-    return structuredClone(initialState);
+    return cloneState(initialState);
   }
 }
 
@@ -962,16 +1089,26 @@ function formatPercent(value) {
 }
 
 function escapeHtml(text) {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function registerSW() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js");
+  if (!("serviceWorker" in navigator)) return;
+
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    registrations.forEach((registration) => registration.unregister());
+  });
+
+  if (window.caches && caches.keys) {
+    caches.keys().then((keys) => {
+      keys.forEach((key) => {
+        if (key.indexOf("pf-app-") === 0) caches.delete(key);
+      });
+    });
   }
 }
