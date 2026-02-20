@@ -202,6 +202,34 @@ li.entry-section-header {
   color: #94a3b8;
 }
 
+.item-category-line {
+  display: block;
+  margin-top: 2px;
+  color: #c4b5fd;
+  font-weight: 600;
+}
+
+li.expense-summary {
+  border-bottom: 0;
+  padding: 4px 0;
+}
+
+li.expense-summary-total {
+  border-top: 1px dashed #2b3e61;
+  margin-top: 2px;
+  padding-top: 8px;
+  color: #dbeafe;
+}
+
+li.expense-summary-category {
+  color: #a5b4fc;
+  padding-left: 8px;
+}
+
+li.expense-summary-overall {
+  background: rgba(21, 41, 73, 0.35);
+}
+
 li small { color: var(--muted); }
 
 .row-actions {
@@ -312,4 +340,28 @@ li small { color: var(--muted); }
   .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .lists-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .tab { font-size: 0.85rem; }
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.72);
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  z-index: 9999;
+}
+
+.modal-card {
+  width: min(520px, 100%);
+  background: var(--card);
+  border: 1px solid #32486e;
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.modal-card h3 {
+  margin: 0 0 2px;
 }

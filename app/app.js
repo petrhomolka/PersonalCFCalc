@@ -46,6 +46,8 @@ const els = {
   entryType: document.getElementById("entryType"),
   entryName: document.getElementById("entryName"),
   entryAmount: document.getElementById("entryAmount"),
+  entryCategoryWrap: document.getElementById("entryCategoryWrap"),
+  entryCategory: document.getElementById("entryCategory"),
   entryPeriodic: document.getElementById("entryPeriodic"),
   incomeList: document.getElementById("incomeList"),
   expenseList: document.getElementById("expenseList"),
@@ -160,16 +162,22 @@ function wireEvents() {
 
   els.entryForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    const type = els.entryType.value;
     addEntry({
       month: els.monthSelect.value,
-      type: els.entryType.value,
+      type,
       name: els.entryName.value.trim(),
       amount: Number(els.entryAmount.value),
-      periodic: els.entryPeriodic.checked
+      periodic: els.entryPeriodic.checked,
+      category: type === "expense" ? normalizeExpenseCategory(els.entryCategory && els.entryCategory.value) : ""
     });
     els.entryForm.reset();
+    onEntryTypeChange();
     render();
   });
+
+  els.entryType.addEventListener("change", onEntryTypeChange);
+  onEntryTypeChange();
 
   els.assetForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -246,12 +254,14 @@ function onTabClick(event) {
   document.getElementById(tab.dataset.tab).classList.add("active");
 }
 
-function addEntry({ month, type, name, amount, periodic }) {
+function addEntry({ month, type, name, amount, periodic, category }) {
   if (!month || !name || Number.isNaN(amount)) return;
   ensureMonth(month);
 
   const id = createId();
   const item = { id, name, amount, periodic, createdAt: Date.now() };
+  const normalizedCategory = type === "expense" ? normalizeExpenseCategory(category) : "";
+  if (normalizedCategory) item.category = normalizedCategory;
 
   if (type === "income") state.months[month].income.push(item);
   if (type === "expense") state.months[month].expense.push(item);
@@ -295,13 +305,17 @@ function carryPeriodicFromPreviousMonth(month) {
   ["income", "expense", "investment"].forEach((type) => {
     const periodicItems = state.months[previous][type].filter((item) => item.periodic);
     periodicItems.forEach((item) => {
+      const sourceEntryId = resolveSourceEntryId(item);
+      const periodicKey = buildPeriodicKey(type, item, sourceEntryId);
       state.months[month][type].push({
         id: createId(),
         name: item.name,
         amount: item.amount,
+        category: normalizeExpenseCategory(item.category),
         periodic: true,
         carriedFrom: previous,
-        sourcePeriodicKey: `${type}|${item.name}|${item.amount}`,
+        sourceEntryId,
+        sourcePeriodicKey: periodicKey,
         createdAt: Date.now()
       });
     });
@@ -317,20 +331,23 @@ function syncPeriodicPrefill(month) {
     const existingKeys = new Set(
       current
         .filter((item) => item.periodic)
-        .map((item) => item.sourcePeriodicKey || `${type}|${item.name}|${item.amount}`)
+        .map((item) => item.sourcePeriodicKey || buildPeriodicKey(type, item))
     );
 
     const periodicFromPrev = state.months[previous][type].filter((item) => item.periodic);
     periodicFromPrev.forEach((item) => {
-      const key = `${type}|${item.name}|${item.amount}`;
+      const sourceEntryId = resolveSourceEntryId(item);
+      const key = buildPeriodicKey(type, item, sourceEntryId);
       if (existingKeys.has(key)) return;
 
       current.push({
         id: createId(),
         name: item.name,
         amount: item.amount,
+        category: normalizeExpenseCategory(item.category),
         periodic: true,
         carriedFrom: previous,
+        sourceEntryId,
         sourcePeriodicKey: key,
         createdAt: Date.now()
       });
@@ -405,27 +422,66 @@ function startNextMonth() {
     return;
   }
 
-  const confirmed = confirm(`Přepnout na ${nextMonth} a přenést assets z ${currentMonth}?`);
+  const confirmed = confirm(`Přepnout na ${nextMonth} a přenést všechny položky z ${currentMonth}?`);
   if (!confirmed) return;
 
   ensureMonth(currentMonth);
   ensureMonth(nextMonth);
+  carryAllEntriesToNextMonth(currentMonth, nextMonth);
   carryAssetsToNextMonth(currentMonth, nextMonth);
 
   els.monthSelect.value = nextMonth;
   saveState();
   render();
-  setStatus(`Vytvořen měsíc ${nextMonth} a assets přeneseny z ${currentMonth}.`);
+  setStatus(`Vytvořen měsíc ${nextMonth} a všechny položky přeneseny z ${currentMonth}.`);
+}
+
+function carryAllEntriesToNextMonth(fromMonth, toMonth) {
+  ["income", "expense", "investment"].forEach((type) => {
+    const source = (state.months[fromMonth] && state.months[fromMonth][type]) || [];
+    const target = (state.months[toMonth] && state.months[toMonth][type]) || [];
+
+    const existingKeys = new Set(
+      target.map((item) => item.sourceCarryKey || `${type}|${resolveSourceEntryId(item)}`)
+    );
+
+    source.forEach((item) => {
+      const sourceEntryId = resolveSourceEntryId(item);
+      const sourceCarryKey = `${type}|${sourceEntryId}`;
+      if (existingKeys.has(sourceCarryKey)) return;
+
+      const nextItem = {
+        id: createId(),
+        name: item.name,
+        amount: Number(item.amount) || 0,
+        periodic: Boolean(item.periodic),
+        category: normalizeExpenseCategory(item.category),
+        carriedFrom: fromMonth,
+        sourceEntryId,
+        sourceCarryKey,
+        createdAt: Date.now()
+      };
+
+      if (!nextItem.category) delete nextItem.category;
+      if (!nextItem.periodic) delete nextItem.sourcePeriodicKey;
+      if (nextItem.periodic) {
+        nextItem.sourcePeriodicKey = buildPeriodicKey(type, nextItem, sourceEntryId);
+      }
+
+      target.push(nextItem);
+      existingKeys.add(sourceCarryKey);
+    });
+  });
 }
 
 function carryAssetsToNextMonth(fromMonth, toMonth) {
   const source = (state.months[fromMonth] && state.months[fromMonth].assets) || [];
   const target = (state.months[toMonth] && state.months[toMonth].assets) || [];
 
-  const existingKeys = new Set(target.map((item) => item.sourceAssetKey || `${item.name}|${item.value}`));
+  const existingKeys = new Set(target.map((item) => item.sourceAssetKey || resolveSourceAssetId(item)));
 
   source.forEach((item) => {
-    const sourceAssetKey = `${item.name}|${item.value}`;
+    const sourceAssetKey = resolveSourceAssetId(item);
     if (existingKeys.has(sourceAssetKey)) return;
 
     target.push({
@@ -434,6 +490,7 @@ function carryAssetsToNextMonth(fromMonth, toMonth) {
       value: Number(item.value) || 0,
       isCash: isCashAsset(item),
       carriedFrom: fromMonth,
+      sourceAssetId: sourceAssetKey,
       sourceAssetKey,
       createdAt: Date.now()
     });
@@ -512,11 +569,15 @@ function renderEntryList(listEl, month, type, items) {
     const periodicBadge = item.periodic
       ? '<small class="item-badge periodic-badge">PERIODICAL</small>'
       : '<small class="item-badge onetime-badge">ONE-TIME</small>';
+    const categoryLine = type === "expense" && normalizeExpenseCategory(item.category)
+      ? `<small class="item-category-line">${escapeHtml(normalizeExpenseCategory(item.category))}</small>`
+      : "";
     const autoText = item.carriedFrom ? `<small>(auto z ${item.carriedFrom})</small>` : "";
     li.innerHTML = `
       <span>
         ${escapeHtml(item.name)}
         ${item.periodic !== undefined ? periodicBadge : ""}
+        ${categoryLine}
         ${autoText}
       </span>
       <span class="row-actions">
@@ -528,7 +589,58 @@ function renderEntryList(listEl, month, type, items) {
     listEl.appendChild(li);
   });
 
+  if (type === "expense") {
+    renderExpenseSummarySection(listEl, periodicItems, "Součet periodických výdajů", "periodic");
+    renderExpenseSummarySection(listEl, items, "Celkem výdaje (vč. one-time)", "overall");
+  }
+
   bindRowActions(listEl);
+}
+
+function renderExpenseSummarySection(listEl, expenseItems, title, mode) {
+  const total = sumBy(expenseItems, "amount");
+  const summaryHeader = document.createElement("li");
+  summaryHeader.className = "entry-section-header";
+  summaryHeader.innerHTML = `<small>${escapeHtml(title)}</small>`;
+  listEl.appendChild(summaryHeader);
+
+  const totalRow = document.createElement("li");
+  totalRow.className = `expense-summary expense-summary-total expense-summary-${mode}`;
+  totalRow.innerHTML = `
+    <span>Overall sum</span>
+    <span class="row-actions"><strong>${formatCurrency(total)}</strong></span>
+  `;
+  listEl.appendChild(totalRow);
+
+  const categoryTotals = getExpenseCategoryTotals(expenseItems);
+  Object.keys(categoryTotals).sort((left, right) => left.localeCompare(right, "cs")).forEach((category) => {
+    const row = document.createElement("li");
+    row.className = `expense-summary expense-summary-category expense-summary-${mode}`;
+    row.innerHTML = `
+      <span>${escapeHtml(category)}</span>
+      <span class="row-actions"><strong>${formatCurrency(categoryTotals[category])}</strong></span>
+    `;
+    listEl.appendChild(row);
+  });
+}
+
+function getExpenseCategoryTotals(expenseItems) {
+  return expenseItems.reduce((acc, item) => {
+    const category = normalizeExpenseCategory(item.category);
+    if (!category) return acc;
+    acc[category] = (acc[category] || 0) + (Number(item.amount) || 0);
+    return acc;
+  }, {});
+}
+
+function onEntryTypeChange() {
+  const isExpense = els.entryType && els.entryType.value === "expense";
+  if (els.entryCategoryWrap) {
+    els.entryCategoryWrap.hidden = !isExpense;
+  }
+  if (!isExpense && els.entryCategory) {
+    els.entryCategory.value = "";
+  }
 }
 
 function renderAssetList(listEl, month, items) {
@@ -587,22 +699,47 @@ function onRowActionClick(event) {
   }
 }
 
-function editEntry(month, type, id) {
+async function editEntry(month, type, id) {
   const list = state.months[month] && state.months[month][type] ? state.months[month][type] : [];
   const item = list.find((row) => row.id === id);
   if (!item) return;
 
-  const name = prompt("Název", item.name);
-  if (name === null) return;
-  const amountText = prompt("Částka (Kč)", String(item.amount));
-  if (amountText === null) return;
-  const amount = Number(amountText);
-  if (!name.trim() || Number.isNaN(amount)) return;
+  const fields = [
+    { key: "name", label: "Název", type: "text", value: item.name || "", required: true },
+    { key: "amount", label: "Částka (Kč)", type: "number", value: String(item.amount ?? ""), required: true },
+    { key: "periodic", label: "Periodical", type: "checkbox", value: Boolean(item.periodic) }
+  ];
 
-  const periodic = confirm("Je položka periodical? OK = ano, Cancel = ne");
-  item.name = name.trim();
+  if (type === "expense") {
+    fields.push({
+      key: "category",
+      label: "Kategorie výdaje",
+      type: "text",
+      value: normalizeExpenseCategory(item.category)
+    });
+  }
+
+  const edited = await showEditModal({
+    title: type === "expense" ? "Upravit výdaj" : type === "income" ? "Upravit příjem" : "Upravit investici",
+    fields,
+    submitText: "Uložit"
+  });
+  if (!edited) return;
+
+  const name = String(edited.name || "").trim();
+  const amount = Number(edited.amount);
+  if (!name || Number.isNaN(amount)) return;
+
+  item.name = name;
   item.amount = amount;
-  item.periodic = periodic;
+  item.periodic = Boolean(edited.periodic);
+  if (type === "expense") {
+    const category = normalizeExpenseCategory(edited.category);
+    if (category) item.category = category;
+    else delete item.category;
+  } else {
+    delete item.category;
+  }
   item.updatedAt = Date.now();
 
   saveState();
@@ -617,27 +754,111 @@ function deleteEntry(month, type, id) {
   render();
 }
 
-function editAsset(month, id) {
+async function editAsset(month, id) {
   const list = state.months[month] && state.months[month].assets ? state.months[month].assets : [];
   const item = list.find((row) => row.id === id);
   if (!item) return;
 
-  const name = prompt("Název asset", item.name);
-  if (name === null) return;
-  const valueText = prompt("Hodnota (Kč)", String(item.value));
-  if (valueText === null) return;
-  const value = Number(valueText);
-  if (!name.trim() || Number.isNaN(value)) return;
-  const cashByDefault = isCashAsset(item);
-  const isCash = confirm(`Je to cash asset?\n\nOK = ano, Cancel = ne\n(${cashByDefault ? "aktuálně: ano" : "aktuálně: ne"})`);
+  const edited = await showEditModal({
+    title: "Upravit asset",
+    fields: [
+      { key: "name", label: "Název asset", type: "text", value: item.name || "", required: true },
+      { key: "value", label: "Hodnota (Kč)", type: "number", value: String(item.value ?? ""), required: true },
+      { key: "isCash", label: "Cash asset", type: "checkbox", value: isCashAsset(item) }
+    ],
+    submitText: "Uložit"
+  });
+  if (!edited) return;
 
-  item.name = name.trim();
+  const name = String(edited.name || "").trim();
+  const value = Number(edited.value);
+  if (!name || Number.isNaN(value)) return;
+
+  item.name = name;
   item.value = value;
-  item.isCash = isCash;
+  item.isCash = Boolean(edited.isCash);
   item.updatedAt = Date.now();
 
   saveState();
   render();
+}
+
+function showEditModal({ title, fields, submitText = "Save" }) {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("form");
+    modal.className = "modal-card";
+    modal.noValidate = true;
+
+    const titleEl = document.createElement("h3");
+    titleEl.textContent = title;
+    modal.appendChild(titleEl);
+
+    fields.forEach((field) => {
+      const row = document.createElement("label");
+      row.className = field.type === "checkbox" ? "inline" : "stack";
+      row.textContent = field.label;
+
+      const input = document.createElement("input");
+      input.name = field.key;
+      input.type = field.type === "number" ? "number" : field.type === "checkbox" ? "checkbox" : "text";
+      if (input.type === "number") input.step = "0.01";
+
+      if (input.type === "checkbox") {
+        input.checked = Boolean(field.value);
+      } else {
+        input.value = String(field.value || "");
+      }
+
+      if (field.required) input.required = true;
+      row.appendChild(input);
+      modal.appendChild(row);
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "danger";
+    cancelBtn.textContent = "Cancel";
+
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "submit";
+    saveBtn.textContent = submitText;
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(saveBtn);
+    modal.appendChild(actions);
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    const closeWith = (value) => {
+      backdrop.remove();
+      resolve(value);
+    };
+
+    cancelBtn.addEventListener("click", () => closeWith(null));
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) closeWith(null);
+    });
+
+    modal.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const payload = {};
+      fields.forEach((field) => {
+        const input = modal.elements.namedItem(field.key);
+        if (!(input instanceof HTMLInputElement)) return;
+        payload[field.key] = input.type === "checkbox" ? input.checked : input.value;
+      });
+      closeWith(payload);
+    });
+
+    const firstInput = modal.querySelector("input");
+    if (firstInput instanceof HTMLInputElement) firstInput.focus();
+  });
 }
 
 function deleteAsset(month, id) {
@@ -1176,6 +1397,26 @@ function parseCsv(text) {
   }
 
   return out;
+}
+
+function normalizeExpenseCategory(value) {
+  return String(value || "").trim();
+}
+
+function resolveSourceEntryId(item) {
+  return item && (item.sourceEntryId || item.id) ? String(item.sourceEntryId || item.id) : createId();
+}
+
+function resolveSourceAssetId(item) {
+  if (!item) return createId();
+  if (item.sourceAssetId) return String(item.sourceAssetId);
+  if (item.id) return String(item.id);
+  return `${String(item.name || "asset")}|${String(item.value || 0)}`;
+}
+
+function buildPeriodicKey(type, item, sourceEntryId = resolveSourceEntryId(item)) {
+  const categoryPart = type === "expense" ? `|${normalizeExpenseCategory(item.category)}` : "";
+  return `${type}|${sourceEntryId}|${item.name}|${item.amount}${categoryPart}`;
 }
 
 function parseMonth(value) {
