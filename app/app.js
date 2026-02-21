@@ -299,6 +299,8 @@ function setupChartInteractionEvents() {
     canvas.classList.add("chart-interactive");
     canvas.addEventListener("pointerdown", onChartPointerDown);
     canvas.addEventListener("pointermove", onChartPointerMove);
+    canvas.addEventListener("pointerup", onChartPointerUp);
+    canvas.addEventListener("pointercancel", onChartPointerCancel);
     canvas.addEventListener("pointerleave", onChartPointerLeave);
   });
 
@@ -324,6 +326,100 @@ function onChartPointerDown(event) {
   const canvas = event.currentTarget;
   if (!(canvas instanceof HTMLCanvasElement)) return;
 
+  const meta = canvas._chartMeta;
+  if (!meta) return;
+  const point = getCanvasEventPoint(canvas, event);
+  if (!point) return;
+
+  if (isTouchLikePointer(event)) {
+    canvas._chartPendingTap = {
+      pointerId: event.pointerId,
+      startX: point.x,
+      startY: point.y,
+      moved: false
+    };
+
+    if (chartInteractionState.activeCanvasId === canvas.id
+      && chartInteractionState.selectedSeriesId
+      && isPointInsidePlot(meta, point)) {
+      const nextIndex = getNearestIndexFromX(meta, point.x);
+      if (chartInteractionState.hoverIndex !== nextIndex) {
+        chartInteractionState.hoverIndex = nextIndex;
+        requestChartRedraw(canvas);
+      }
+    }
+    return;
+  }
+
+  handleChartSelectionAtPoint(canvas, meta, point);
+}
+
+function onChartPointerUp(event) {
+  const canvas = event.currentTarget;
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  if (!isTouchLikePointer(event)) return;
+
+  const pendingTap = canvas._chartPendingTap;
+  canvas._chartPendingTap = null;
+  if (!pendingTap || pendingTap.pointerId !== event.pointerId || pendingTap.moved) return;
+
+  const meta = canvas._chartMeta;
+  if (!meta) return;
+  const point = getCanvasEventPoint(canvas, event);
+  if (!point) return;
+
+  handleChartSelectionAtPoint(canvas, meta, point);
+}
+
+function onChartPointerCancel(event) {
+  const canvas = event.currentTarget;
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  canvas._chartPendingTap = null;
+}
+
+function onChartPointerMove(event) {
+  const canvas = event.currentTarget;
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+
+  if (isTouchLikePointer(event)) {
+    const pendingTap = canvas._chartPendingTap;
+    if (pendingTap && pendingTap.pointerId === event.pointerId) {
+      const point = getCanvasEventPoint(canvas, event);
+      if (point) {
+        const dx = point.x - pendingTap.startX;
+        const dy = point.y - pendingTap.startY;
+        if ((dx * dx) + (dy * dy) > 64) {
+          pendingTap.moved = true;
+        }
+      }
+    }
+  }
+
+  if (chartInteractionState.activeCanvasId !== canvas.id || !chartInteractionState.selectedSeriesId) return;
+
+  const meta = canvas._chartMeta;
+  if (!meta) return;
+  const point = getCanvasEventPoint(canvas, event);
+  if (!point) return;
+  if (!isPointInsidePlot(meta, point)) return;
+
+  const nextIndex = getNearestIndexFromX(meta, point.x);
+  if (chartInteractionState.hoverIndex === nextIndex) return;
+  chartInteractionState.hoverIndex = nextIndex;
+  requestChartRedraw(canvas);
+  event.preventDefault();
+}
+
+function onChartPointerLeave(event) {
+  const canvas = event.currentTarget;
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  if (chartInteractionState.activeCanvasId !== canvas.id || !chartInteractionState.selectedSeriesId) return;
+  if (chartInteractionState.hoverIndex === null) return;
+  chartInteractionState.hoverIndex = null;
+  requestChartRedraw(canvas);
+}
+
+function handleChartSelectionAtPoint(canvas, meta, point) {
   if (chartInteractionState.activeCanvasId && chartInteractionState.activeCanvasId !== canvas.id) {
     const previousCanvas = document.getElementById(chartInteractionState.activeCanvasId);
     const shouldRedrawPrevious = previousCanvas instanceof HTMLCanvasElement ? previousCanvas : null;
@@ -332,11 +428,6 @@ function onChartPointerDown(event) {
     chartInteractionState.hoverIndex = null;
     requestChartRedraw(shouldRedrawPrevious);
   }
-
-  const meta = canvas._chartMeta;
-  if (!meta) return;
-  const point = getCanvasEventPoint(canvas, event);
-  if (!point) return;
 
   const legendItem = findLegendItemAtPoint(meta, point.x, point.y);
   if (legendItem) {
@@ -374,31 +465,9 @@ function onChartPointerDown(event) {
   requestChartRedraw(canvas);
 }
 
-function onChartPointerMove(event) {
-  const canvas = event.currentTarget;
-  if (!(canvas instanceof HTMLCanvasElement)) return;
-  if (chartInteractionState.activeCanvasId !== canvas.id || !chartInteractionState.selectedSeriesId) return;
-
-  const meta = canvas._chartMeta;
-  if (!meta) return;
-  const point = getCanvasEventPoint(canvas, event);
-  if (!point) return;
-  if (!isPointInsidePlot(meta, point)) return;
-
-  const nextIndex = getNearestIndexFromX(meta, point.x);
-  if (chartInteractionState.hoverIndex === nextIndex) return;
-  chartInteractionState.hoverIndex = nextIndex;
-  requestChartRedraw(canvas);
-  event.preventDefault();
-}
-
-function onChartPointerLeave(event) {
-  const canvas = event.currentTarget;
-  if (!(canvas instanceof HTMLCanvasElement)) return;
-  if (chartInteractionState.activeCanvasId !== canvas.id || !chartInteractionState.selectedSeriesId) return;
-  if (chartInteractionState.hoverIndex === null) return;
-  chartInteractionState.hoverIndex = null;
-  requestChartRedraw(canvas);
+function isTouchLikePointer(event) {
+  const pointerType = String((event && event.pointerType) || "").toLowerCase();
+  return pointerType === "touch" || pointerType === "pen";
 }
 
 function clearChartInteractionSelection() {
