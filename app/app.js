@@ -1787,9 +1787,11 @@ function renderMacroChart() {
   const passiveIncome = labels.map((month) => getTotalsForMonth(month).passiveIncome);
   const passiveCfUntilCurrent = maskValuesAfterCurrentMonth(labels, passiveCf, currentMonth);
   const passiveIncomeUntilCurrent = maskValuesAfterCurrentMonth(labels, passiveIncome, currentMonth);
+  const passiveCfMovingAverage6Months = buildMovingAverage(passiveCfUntilCurrent, 6);
 
   drawLineChart(els.macroChart, labels, [
     { name: "Passive CF", values: passiveCfUntilCurrent, color: "#3b82f6" },
+    { name: "Passive CF 6M moving avg", values: passiveCfMovingAverage6Months, color: "#22c55e" },
     { name: "Passive income", values: passiveIncomeUntilCurrent, color: "#ef4444" }
   ], {
     yAxisLabel: ""
@@ -1834,6 +1836,35 @@ function buildLinearTrendline(values, targetLength) {
   return Array.from({ length: targetLength }, (_, index) => intercept + (slope * (index + 1)));
 }
 
+function buildMovingAverage(values, windowSize, { requireFullWindow = true } = {}) {
+  const normalizedWindow = Math.max(1, Number(windowSize) || 1);
+  const result = [];
+
+  for (let index = 0; index < values.length; index += 1) {
+    const startIndex = Math.max(0, index - normalizedWindow + 1);
+    const slice = values.slice(startIndex, index + 1);
+    const numericValues = slice
+      .filter((value) => value !== null && value !== undefined)
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+
+    if (requireFullWindow && numericValues.length < normalizedWindow) {
+      result.push(null);
+      continue;
+    }
+
+    if (!numericValues.length) {
+      result.push(null);
+      continue;
+    }
+
+    const sum = numericValues.reduce((accumulator, value) => accumulator + value, 0);
+    result.push(sum / numericValues.length);
+  }
+
+  return result;
+}
+
 function renderAssetMacroChart() {
   const labels = getCashMonthAxis();
   const currentMonth = getChartCutoffMonth();
@@ -1855,10 +1886,12 @@ function renderCashflowChart() {
   const currentMonth = getChartCutoffMonth();
   const cashFlow = labels.map((month) => getTotalsForMonth(month).cashflow);
   const cashFlowUntilCurrent = maskValuesAfterCurrentMonth(labels, cashFlow, currentMonth);
+  const movingAverage6Months = buildMovingAverage(cashFlowUntilCurrent, 6);
   const trendline = buildLinearTrendline(cashFlowUntilCurrent, labels.length);
 
   drawLineChart(els.cashflowChart, labels, [
     { name: "CashFlow", values: cashFlowUntilCurrent, color: "#3b82f6" },
+    { name: "6M moving avg", values: movingAverage6Months, color: "#22c55e" },
     { name: "Trendline", values: trendline, color: "#93c5fd" }
   ], {
     yAxisLabel: ""
