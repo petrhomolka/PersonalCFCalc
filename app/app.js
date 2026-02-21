@@ -202,10 +202,14 @@ async function boot() {
 
 function wireEvents() {
   els.tabs.addEventListener("click", onTabClick);
-  els.monthSelect.addEventListener("change", () => {
+  els.monthSelect.addEventListener("change", async () => {
     if (els.monthSelect.value > getMonthSelectionMax()) {
       els.monthSelect.value = getMonthSelectionMax();
       setStatus("Future months are locked. Use Create new month to create and unlock them.");
+      await showInfoModal({
+        title: "Future month is locked",
+        message: "You can select only current or past months. To unlock a future month, use the Create new month button."
+      });
     }
     ensureMonth(els.monthSelect.value);
     render();
@@ -1938,6 +1942,46 @@ function showEditModal({ title, fields, submitText = "Save" }) {
 
     const firstInput = modal.querySelector("input");
     if (firstInput instanceof HTMLInputElement) firstInput.focus();
+  });
+}
+
+function showInfoModal({ title, message, okText = "OK" }) {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+
+    const modal = document.createElement("div");
+    modal.className = "modal-card";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+
+    const titleEl = document.createElement("h3");
+    titleEl.textContent = title;
+    modal.appendChild(titleEl);
+
+    const messageEl = document.createElement("p");
+    messageEl.textContent = message;
+    modal.appendChild(messageEl);
+
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+
+    const okBtn = document.createElement("button");
+    okBtn.type = "button";
+    okBtn.textContent = okText;
+
+    actions.appendChild(okBtn);
+    modal.appendChild(actions);
+
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    okBtn.addEventListener("click", () => {
+      backdrop.remove();
+      resolve();
+    });
+
+    okBtn.focus();
   });
 }
 
