@@ -124,6 +124,11 @@ body {
   height: 220px;
 }
 
+#dashboard .card canvas.chart-interactive {
+  touch-action: none;
+  cursor: crosshair;
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

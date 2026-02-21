@@ -88,6 +88,19 @@ const state = loadState();
 let nextMonthArmTimeout = null;
 let isNextMonthArmed = false;
 let viewportRenderTimeout = null;
+const CHART_CANVAS_KEYS = [
+  "trendChart",
+  "assetChart",
+  "macroChart",
+  "assetMacroChart",
+  "cashflowChart",
+  "incomeChart"
+];
+const chartInteractionState = {
+  activeCanvasId: null,
+  selectedSeriesId: null,
+  hoverIndex: null
+};
 const els = {
   runtimeError: document.getElementById("runtimeError"),
   tabs: document.getElementById("tabs"),
@@ -275,6 +288,277 @@ function wireEvents() {
       }, 80);
     }
   });
+
+  setupChartInteractionEvents();
+}
+
+function setupChartInteractionEvents() {
+  getChartCanvases().forEach((canvas) => {
+    if (!canvas || canvas.dataset.chartInteractionBound === "1") return;
+    canvas.dataset.chartInteractionBound = "1";
+    canvas.classList.add("chart-interactive");
+    canvas.addEventListener("pointerdown", onChartPointerDown);
+    canvas.addEventListener("pointermove", onChartPointerMove);
+    canvas.addEventListener("pointerleave", onChartPointerLeave);
+  });
+
+  if (document.body && document.body.dataset.chartOutsideInteractionBound !== "1") {
+    document.body.dataset.chartOutsideInteractionBound = "1";
+    document.addEventListener("pointerdown", onDocumentPointerDownForCharts);
+  }
+}
+
+function getChartCanvases() {
+  return CHART_CANVAS_KEYS
+    .map((key) => els[key])
+    .filter(Boolean);
+}
+
+function onDocumentPointerDownForCharts(event) {
+  const target = event.target;
+  if (target instanceof Element && target.closest("canvas.chart-interactive")) return;
+  clearChartInteractionSelection();
+}
+
+function onChartPointerDown(event) {
+  const canvas = event.currentTarget;
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+
+  if (chartInteractionState.activeCanvasId && chartInteractionState.activeCanvasId !== canvas.id) {
+    const previousCanvas = document.getElementById(chartInteractionState.activeCanvasId);
+    const shouldRedrawPrevious = previousCanvas instanceof HTMLCanvasElement ? previousCanvas : null;
+    chartInteractionState.activeCanvasId = null;
+    chartInteractionState.selectedSeriesId = null;
+    chartInteractionState.hoverIndex = null;
+    requestChartRedraw(shouldRedrawPrevious);
+  }
+
+  const meta = canvas._chartMeta;
+  if (!meta) return;
+  const point = getCanvasEventPoint(canvas, event);
+  if (!point) return;
+
+  const legendItem = findLegendItemAtPoint(meta, point.x, point.y);
+  if (legendItem) {
+    if (chartInteractionState.activeCanvasId === canvas.id && chartInteractionState.selectedSeriesId === legendItem.id) {
+      chartInteractionState.activeCanvasId = null;
+      chartInteractionState.selectedSeriesId = null;
+      chartInteractionState.hoverIndex = null;
+    } else {
+      chartInteractionState.activeCanvasId = canvas.id;
+      chartInteractionState.selectedSeriesId = legendItem.id;
+      const preferredIndex = findPreferredHoverIndex(meta, legendItem.id);
+      chartInteractionState.hoverIndex = preferredIndex;
+    }
+    requestChartRedraw(canvas);
+    return;
+  }
+
+  if (!isPointInsidePlot(meta, point)) {
+    if (chartInteractionState.activeCanvasId === canvas.id) {
+      chartInteractionState.activeCanvasId = null;
+      chartInteractionState.selectedSeriesId = null;
+      chartInteractionState.hoverIndex = null;
+      requestChartRedraw(canvas);
+    }
+    return;
+  }
+
+  const hoveredIndex = getNearestIndexFromX(meta, point.x);
+  const selectedSeries = findNearestSeriesAtPoint(meta, hoveredIndex, point.y);
+  if (!selectedSeries) return;
+
+  chartInteractionState.activeCanvasId = canvas.id;
+  chartInteractionState.selectedSeriesId = selectedSeries.id;
+  chartInteractionState.hoverIndex = hoveredIndex;
+  requestChartRedraw(canvas);
+}
+
+function onChartPointerMove(event) {
+  const canvas = event.currentTarget;
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  if (chartInteractionState.activeCanvasId !== canvas.id || !chartInteractionState.selectedSeriesId) return;
+
+  const meta = canvas._chartMeta;
+  if (!meta) return;
+  const point = getCanvasEventPoint(canvas, event);
+  if (!point) return;
+  if (!isPointInsidePlot(meta, point)) return;
+
+  const nextIndex = getNearestIndexFromX(meta, point.x);
+  if (chartInteractionState.hoverIndex === nextIndex) return;
+  chartInteractionState.hoverIndex = nextIndex;
+  requestChartRedraw(canvas);
+  event.preventDefault();
+}
+
+function onChartPointerLeave(event) {
+  const canvas = event.currentTarget;
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  if (chartInteractionState.activeCanvasId !== canvas.id || !chartInteractionState.selectedSeriesId) return;
+  if (chartInteractionState.hoverIndex === null) return;
+  chartInteractionState.hoverIndex = null;
+  requestChartRedraw(canvas);
+}
+
+function clearChartInteractionSelection() {
+  if (!chartInteractionState.activeCanvasId) return;
+  const previousCanvas = document.getElementById(chartInteractionState.activeCanvasId);
+  chartInteractionState.activeCanvasId = null;
+  chartInteractionState.selectedSeriesId = null;
+  chartInteractionState.hoverIndex = null;
+  if (previousCanvas instanceof HTMLCanvasElement) {
+    requestChartRedraw(previousCanvas);
+  }
+}
+
+function requestChartRedraw(canvas) {
+  if (!canvas || typeof canvas._chartRedraw !== "function") return;
+  canvas._chartRedraw();
+}
+
+function getCanvasEventPoint(canvas, event) {
+  if (!(canvas instanceof HTMLCanvasElement)) return null;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+
+  const pointerEvent = event;
+  if (!Number.isFinite(pointerEvent.clientX) || !Number.isFinite(pointerEvent.clientY)) return null;
+
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  return {
+    x: (pointerEvent.clientX - rect.left) * scaleX,
+    y: (pointerEvent.clientY - rect.top) * scaleY
+  };
+}
+
+function findLegendItemAtPoint(meta, x, y) {
+  if (!meta || !Array.isArray(meta.legendItems)) return null;
+  return meta.legendItems.find((item) => {
+    return x >= item.x1 && x <= item.x2 && y >= item.y1 && y <= item.y2;
+  }) || null;
+}
+
+function isPointInsidePlot(meta, point) {
+  if (!meta || !meta.plot || !point) return false;
+  return point.x >= meta.plot.left
+    && point.x <= meta.plot.right
+    && point.y >= meta.plot.top
+    && point.y <= meta.plot.bottom;
+}
+
+function getNearestIndexFromX(meta, x) {
+  const labelsCount = Array.isArray(meta && meta.labels) ? meta.labels.length : 0;
+  if (!labelsCount) return 0;
+  if (labelsCount === 1) return 0;
+
+  const clampedX = Math.min(Math.max(x, meta.plot.left), meta.plot.right);
+  const ratio = (clampedX - meta.plot.left) / Math.max(1, meta.plot.right - meta.plot.left);
+  const index = Math.round(ratio * (labelsCount - 1));
+  return Math.max(0, Math.min(labelsCount - 1, index));
+}
+
+function findNearestSeriesAtPoint(meta, index, y) {
+  if (!meta || !Array.isArray(meta.series)) return null;
+
+  let nearest = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  meta.series.forEach((series) => {
+    const value = series && Array.isArray(series.values) ? series.values[index] : null;
+    if (!meta.isValueVisible(value, series)) return;
+
+    const point = meta.getSeriesPoint(series, index, Number(value));
+    if (!point) return;
+
+    const distance = Math.abs(point.y - y);
+    if (distance < nearestDistance) {
+      nearest = series;
+      nearestDistance = distance;
+    }
+  });
+
+  return nearest;
+}
+
+function findPreferredHoverIndex(meta, seriesId) {
+  if (!meta || !Array.isArray(meta.series)) return null;
+  const series = meta.series.find((entry) => entry.id === seriesId);
+  if (!series || !Array.isArray(series.values)) return null;
+
+  for (let index = series.values.length - 1; index >= 0; index -= 1) {
+    if (meta.isValueVisible(series.values[index], series)) return index;
+  }
+
+  return null;
+}
+
+function getSelectedChartSeries(meta) {
+  if (!meta) return null;
+  if (chartInteractionState.activeCanvasId !== meta.canvasId) return null;
+  if (!chartInteractionState.selectedSeriesId) return null;
+  return meta.series.find((series) => series.id === chartInteractionState.selectedSeriesId) || null;
+}
+
+function drawSelectedSeriesValueOverlay(ctx, meta) {
+  const selectedSeries = getSelectedChartSeries(meta);
+  if (!selectedSeries) return;
+
+  let index = Number.isInteger(chartInteractionState.hoverIndex) ? chartInteractionState.hoverIndex : null;
+  if (index === null || index < 0 || index >= meta.labels.length) {
+    index = findPreferredHoverIndex(meta, selectedSeries.id);
+  }
+  if (index === null || index < 0 || index >= meta.labels.length) return;
+
+  const rawValue = selectedSeries.values[index];
+  if (!meta.isValueVisible(rawValue, selectedSeries)) return;
+  const numericValue = Number(rawValue);
+  const point = meta.getSeriesPoint(selectedSeries, index, numericValue);
+  if (!point) return;
+
+  const dpr = meta.dpr || 1;
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.5)";
+  ctx.lineWidth = Math.max(1, 1 * dpr);
+  ctx.setLineDash([4 * dpr, 4 * dpr]);
+  ctx.beginPath();
+  ctx.moveTo(point.x, meta.plot.top);
+  ctx.lineTo(point.x, meta.plot.bottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = selectedSeries.color;
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, 3.5 * dpr, 0, Math.PI * 2);
+  ctx.fill();
+
+  const monthLabel = String(meta.labels[index] || "").replace("-", "/");
+  const valueLabel = meta.formatValue(numericValue);
+  const text = `${monthLabel}: ${valueLabel}`;
+
+  ctx.font = `${10 * dpr}px sans-serif`;
+  const textWidth = ctx.measureText(text).width;
+  const horizontalPadding = 6 * dpr;
+  const bubbleWidth = textWidth + (horizontalPadding * 2);
+  const bubbleHeight = 18 * dpr;
+  const bubbleX = Math.max(
+    meta.plot.left,
+    Math.min(meta.plot.right - bubbleWidth, point.x - (bubbleWidth / 2))
+  );
+  const bubbleY = Math.max(2 * dpr, point.y - bubbleHeight - (8 * dpr));
+
+  ctx.fillStyle = "rgba(11, 18, 32, 0.92)";
+  ctx.fillRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight);
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.7)";
+  ctx.lineWidth = Math.max(1, 1 * dpr);
+  ctx.strokeRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight);
+
+  ctx.fillStyle = "#e5e7eb";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, bubbleX + horizontalPadding, bubbleY + (bubbleHeight / 2));
+  ctx.restore();
 }
 
 function clearImportedSummaryData() {
@@ -2024,6 +2308,7 @@ function formatChartAxisLabel(value, { type = "currency", compact = false } = {}
 }
 
 function drawCashChart(canvas, labels, data) {
+  canvas._chartRedraw = () => drawCashChart(canvas, labels, data);
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
   const cssWidth = Math.max(1, canvas.clientWidth || 0);
@@ -2178,11 +2463,15 @@ function drawCashChart(canvas, labels, data) {
   });
 
   const legend = [
-    { label: "Actual", color: "#3b82f6", box: true },
-    { label: "Trendline", color: "#93c5fd", box: false },
-    { label: "Goal", color: "#ef4444", box: false },
-    { label: "Prediction", color: "#f59e0b", box: false }
+    { id: "actual", label: "Actual", color: "#3b82f6", box: true },
+    { id: "trendline", label: "Trendline", color: "#93c5fd", box: false },
+    { id: "goal", label: "Goal", color: "#ef4444", box: false },
+    { id: "prediction", label: "Prediction", color: "#f59e0b", box: false }
   ];
+  const selectedSeriesId = chartInteractionState.activeCanvasId === canvas.id
+    ? chartInteractionState.selectedSeriesId
+    : null;
+  const legendItems = [];
 
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
@@ -2191,6 +2480,7 @@ function drawCashChart(canvas, labels, data) {
   const legendY = 12 * dpr;
   let legendX = left + (12 * dpr);
   legend.forEach((item) => {
+    const legendStartX = legendX;
     if (item.box) {
       ctx.fillStyle = item.color;
       ctx.fillRect(legendX, legendY - (5 * dpr), 10 * dpr, 10 * dpr);
@@ -2205,13 +2495,74 @@ function drawCashChart(canvas, labels, data) {
       legendX += 18 * dpr;
     }
 
-    ctx.fillStyle = "#d5deec";
+    const text = item.label;
+    const textWidth = ctx.measureText(text).width;
+    const isSelected = selectedSeriesId === item.id;
+
+    if (isSelected) {
+      const highlightPaddingX = 4 * dpr;
+      const highlightPaddingY = 3 * dpr;
+      const highlightHeight = 14 * dpr;
+      ctx.fillStyle = "rgba(56, 189, 248, 0.2)";
+      ctx.fillRect(
+        legendX - highlightPaddingX,
+        legendY - (highlightHeight / 2) - highlightPaddingY,
+        textWidth + (highlightPaddingX * 2),
+        highlightHeight + (highlightPaddingY * 2)
+      );
+    }
+
+    ctx.fillStyle = isSelected ? "#f8fafc" : "#d5deec";
     ctx.fillText(item.label, legendX, legendY);
-    legendX += (ctx.measureText(item.label).width + (18 * dpr));
+    legendX += (textWidth + (18 * dpr));
+
+    legendItems.push({
+      id: item.id,
+      x1: legendStartX - (6 * dpr),
+      y1: legendY - (10 * dpr),
+      x2: legendX,
+      y2: legendY + (10 * dpr)
+    });
   });
+
+  const seriesMeta = [
+    { id: "actual", label: "Actual", color: "#3b82f6", values: data.assets, kind: "bar" },
+    { id: "prediction", label: "Prediction", color: "#f59e0b", values: data.prediction, kind: "line" },
+    { id: "goal", label: "Goal", color: "#ef4444", values: data.goal, kind: "line" },
+    { id: "trendline", label: "Trendline", color: "#93c5fd", values: data.trendline, kind: "line" }
+  ];
+
+  canvas._chartMeta = {
+    canvasId: canvas.id,
+    dpr,
+    labels,
+    plot: {
+      left,
+      top,
+      right: left + plotWidth,
+      bottom: top + plotHeight
+    },
+    legendItems,
+    series: seriesMeta,
+    formatValue: (value) => formatChartAxisLabel(value, { type: "currency", compact: false }),
+    isValueVisible: (value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric > 0;
+    },
+    getSeriesPoint: (series, index, numericValue) => {
+      if (!Number.isFinite(numericValue) || numericValue <= 0) return null;
+      return {
+        x: xForIndex(index),
+        y: yForValue(numericValue)
+      };
+    }
+  };
+
+  drawSelectedSeriesValueOverlay(ctx, canvas._chartMeta);
 }
 
 function drawLineChart(canvas, labels, series, options = {}) {
+  canvas._chartRedraw = () => drawLineChart(canvas, labels, series, options);
   const ctx = canvas.getContext("2d");
   const dpr = window.devicePixelRatio || 1;
   const cssWidth = Math.max(1, canvas.clientWidth || Number(canvas.getAttribute("width")) || 300);
@@ -2360,7 +2711,17 @@ function drawLineChart(canvas, labels, series, options = {}) {
   ctx.font = `${11 * dpr}px sans-serif`;
   const legendY = 12 * dpr;
   let legendX = left + (12 * dpr);
-  series.forEach((line) => {
+  const normalizedSeries = series.map((line, index) => ({
+    ...line,
+    id: line.id || `series-${index}`
+  }));
+  const selectedSeriesId = chartInteractionState.activeCanvasId === canvas.id
+    ? chartInteractionState.selectedSeriesId
+    : null;
+  const legendItems = [];
+
+  normalizedSeries.forEach((line) => {
+    const legendStartX = legendX;
     ctx.strokeStyle = line.color;
     ctx.lineWidth = seriesStrokeWidth;
     ctx.beginPath();
@@ -2369,9 +2730,34 @@ function drawLineChart(canvas, labels, series, options = {}) {
     ctx.stroke();
     legendX += 18 * dpr;
 
-    ctx.fillStyle = "#d5deec";
-    ctx.fillText(String(line.name || ""), legendX, legendY);
-    legendX += (ctx.measureText(String(line.name || "")).width + (18 * dpr));
+    const text = String(line.name || "");
+    const textWidth = ctx.measureText(text).width;
+    const isSelected = selectedSeriesId === line.id;
+
+    if (isSelected) {
+      const highlightPaddingX = 4 * dpr;
+      const highlightPaddingY = 3 * dpr;
+      const highlightHeight = 14 * dpr;
+      ctx.fillStyle = "rgba(56, 189, 248, 0.2)";
+      ctx.fillRect(
+        legendX - highlightPaddingX,
+        legendY - (highlightHeight / 2) - highlightPaddingY,
+        textWidth + (highlightPaddingX * 2),
+        highlightHeight + (highlightPaddingY * 2)
+      );
+    }
+
+    ctx.fillStyle = isSelected ? "#f8fafc" : "#d5deec";
+    ctx.fillText(text, legendX, legendY);
+    legendX += (textWidth + (18 * dpr));
+
+    legendItems.push({
+      id: line.id,
+      x1: legendStartX - (6 * dpr),
+      y1: legendY - (10 * dpr),
+      x2: legendX,
+      y2: legendY + (10 * dpr)
+    });
   });
 
   ctx.fillStyle = "#8ea2c2";
@@ -2381,6 +2767,40 @@ function drawLineChart(canvas, labels, series, options = {}) {
   if (yAxisLabel) {
     ctx.fillText(yAxisLabel, left, top - (8 * dpr));
   }
+
+  canvas._chartMeta = {
+    canvasId: canvas.id,
+    dpr,
+    labels,
+    plot: {
+      left,
+      top,
+      right: left + plotWidth,
+      bottom: top + plotHeight
+    },
+    legendItems,
+    series: normalizedSeries.map((line) => ({
+      id: line.id,
+      label: String(line.name || ""),
+      color: line.color,
+      values: line.values,
+      kind: "line"
+    })),
+    formatValue: (value) => formatChartAxisLabel(value, { type: yAxisType, compact: false }),
+    isValueVisible: (value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric);
+    },
+    getSeriesPoint: (line, index, numericValue) => {
+      if (!Number.isFinite(numericValue)) return null;
+      return {
+        x: xForIndex(index),
+        y: yForValue(numericValue)
+      };
+    }
+  };
+
+  drawSelectedSeriesValueOverlay(ctx, canvas._chartMeta);
 }
 
 function exportJson() {
