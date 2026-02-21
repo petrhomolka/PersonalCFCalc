@@ -802,7 +802,7 @@ function onStartNextMonthClick() {
 function armStartNextMonthButton() {
   isNextMonthArmed = true;
   if (els.startNextMonthBtn) {
-    els.startNextMonthBtn.textContent = "Confirm start next month";
+    els.startNextMonthBtn.textContent = "Confirm next";
   }
 
   if (nextMonthArmTimeout) clearTimeout(nextMonthArmTimeout);
@@ -819,7 +819,7 @@ function disarmStartNextMonthButton() {
   }
 
   if (els.startNextMonthBtn) {
-    els.startNextMonthBtn.textContent = "Start next month";
+    els.startNextMonthBtn.textContent = "Next month";
   }
 }
 
@@ -920,7 +920,9 @@ function carryAssetsToNextMonth(fromMonth, toMonth) {
 
 function render() {
   const month = els.monthSelect.value;
-  els.activeMonthLabel.textContent = month;
+  if (els.activeMonthLabel) {
+    els.activeMonthLabel.textContent = month;
+  }
 
   const totals = getTotalsForMonth(month);
 

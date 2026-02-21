@@ -13,10 +13,10 @@
     <main class="app-shell">
       <header class="topbar">
         <h1>Personal Finance</h1>
-        <div class="topbar-controls">
-          <div id="appVersionLabel" class="app-version-chip" aria-label="App version"></div>
-          <div id="activeMonthLabel" class="month-chip"></div>
+        <div class="topbar-month-wrap">
+          <input id="monthSelect" type="month" />
         </div>
+        <button id="startNextMonthBtn" type="button" class="topbar-next-btn">Next month</button>
       </header>
       <div id="runtimeError" class="runtime-error" hidden></div>
 
@@ -25,16 +25,10 @@
         <button data-tab="entries" class="tab">Income/<wbr>Expenses/<wbr>Investments</button>
         <button data-tab="assets" class="tab">Assets</button>
         <button data-tab="goals" class="tab">Goals</button>
-        <button data-tab="data" class="tab">Data</button>
+        <button data-tab="data" class="tab">...</button>
       </nav>
 
       <section id="dashboard" class="panel active">
-        <div class="month-selector-wrap">
-          <label for="monthSelect">Month</label>
-          <input id="monthSelect" type="month" />
-          <button id="startNextMonthBtn" type="button" class="danger">Start next month</button>
-        </div>
-
         <div class="kpi-grid">
           <article class="card"><h3>Income</h3><p id="kpiIncome">0</p></article>
           <article class="card"><h3>Expenses</h3><p id="kpiExpense">0</p></article>
@@ -202,6 +196,7 @@
           <h3>Info</h3>
           <p>All data stays local on your device (browser storage). Use JSON export/import to move it to a new device.</p>
           <p id="status"></p>
+          <p id="appVersionLabel" class="app-version-chip" aria-label="App version"></p>
         </article>
       </section>
     </main>
