@@ -645,23 +645,40 @@ function clearImportedSummaryData() {
 function onTabClick(event) {
   const tab = event.target.closest("button[data-tab]");
   if (!tab) return;
+  const nextTab = tab.dataset.tab;
   document.querySelectorAll(".tab").forEach((node) => node.classList.remove("active"));
   tab.classList.add("active");
 
   els.panels.forEach((panel) => panel.classList.remove("active"));
-  document.getElementById(tab.dataset.tab).classList.add("active");
+  document.getElementById(nextTab).classList.add("active");
 
-  if (tab.dataset.tab === "dashboard") {
+  if (nextTab !== "goals") {
+    scrollAppShellToTop();
+  }
+
+  if (nextTab === "dashboard") {
     render();
     return;
   }
 
-  if (tab.dataset.tab === "goals") {
+  if (nextTab === "goals") {
     scrollGoalsToCurrentMonth();
   }
 }
 
+function scrollAppShellToTop() {
+  const shell = document.querySelector(".app-shell");
+  if (shell && typeof shell.scrollTo === "function") {
+    shell.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    return;
+  }
+
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+}
+
 function scrollGoalsToCurrentMonth() {
+  scrollAppShellToTop();
+
   const prefersReducedMotion = typeof window.matchMedia === "function"
     ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
     : false;
