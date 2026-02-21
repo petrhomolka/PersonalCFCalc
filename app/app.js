@@ -72,6 +72,7 @@ function cloneState(value) {
 const initialState = {
   version: 1,
   historicalImportVersion: 0,
+  monthSelectionMax: "",
   months: {},
   importedSummaries: {},
   monthGoals: {},
@@ -189,6 +190,7 @@ async function boot() {
   }
 
   ensureCurrencySettings();
+  ensureMonthSelectionLimit();
   ensureMonth(els.monthSelect.value);
   ensureGoalTimeline();
   initCurrencyUi();
@@ -201,6 +203,10 @@ async function boot() {
 function wireEvents() {
   els.tabs.addEventListener("click", onTabClick);
   els.monthSelect.addEventListener("change", () => {
+    if (els.monthSelect.value > getMonthSelectionMax()) {
+      els.monthSelect.value = getMonthSelectionMax();
+      setStatus("Future months are locked. Use Create new month to create and unlock them.");
+    }
     ensureMonth(els.monthSelect.value);
     render();
   });
@@ -884,7 +890,7 @@ function onStartNextMonthClick() {
 function armStartNextMonthButton() {
   isNextMonthArmed = true;
   if (els.startNextMonthBtn) {
-    els.startNextMonthBtn.textContent = "Confirm next";
+    els.startNextMonthBtn.textContent = "Confirm create";
   }
 
   if (nextMonthArmTimeout) clearTimeout(nextMonthArmTimeout);
@@ -901,7 +907,36 @@ function disarmStartNextMonthButton() {
   }
 
   if (els.startNextMonthBtn) {
-    els.startNextMonthBtn.textContent = "Next month";
+    els.startNextMonthBtn.textContent = "Create new month";
+  }
+}
+
+function ensureMonthSelectionLimit() {
+  const currentMonth = getCurrentMonthKey();
+  const savedMax = String(state.monthSelectionMax || "").trim();
+  const normalizedMax = /^\d{4}-\d{2}$/.test(savedMax) ? savedMax : currentMonth;
+  state.monthSelectionMax = normalizedMax < currentMonth ? currentMonth : normalizedMax;
+
+  if (els.monthSelect) {
+    els.monthSelect.max = state.monthSelectionMax;
+    if (els.monthSelect.value > state.monthSelectionMax) {
+      els.monthSelect.value = state.monthSelectionMax;
+    }
+  }
+}
+
+function getMonthSelectionMax() {
+  ensureMonthSelectionLimit();
+  return state.monthSelectionMax;
+}
+
+function unlockMonthSelection(month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || ""))) return;
+  ensureMonthSelectionLimit();
+  if (month <= state.monthSelectionMax) return;
+  state.monthSelectionMax = month;
+  if (els.monthSelect) {
+    els.monthSelect.max = state.monthSelectionMax;
   }
 }
 
@@ -925,6 +960,7 @@ function startNextMonth() {
 
   carryAllEntriesToNextMonth(currentMonth, nextMonth);
   carryAssetsToNextMonth(currentMonth, nextMonth);
+  unlockMonthSelection(nextMonth);
 
   els.monthSelect.value = nextMonth;
   saveState();
@@ -3340,6 +3376,7 @@ function loadState() {
     return {
       version: 1,
       historicalImportVersion: Number(parsed.historicalImportVersion || 0),
+      monthSelectionMax: String(parsed.monthSelectionMax || ""),
       months: parsed.months && typeof parsed.months === "object" ? parsed.months : {},
       importedSummaries: parsed.importedSummaries && typeof parsed.importedSummaries === "object" ? parsed.importedSummaries : {},
       monthGoals: parsed.monthGoals && typeof parsed.monthGoals === "object" ? parsed.monthGoals : {},
