@@ -73,22 +73,36 @@
 
       <section id="entries" class="panel">
         <article class="card">
-          <h3>New Entry</h3>
-          <form id="entryForm" class="stack">
-            <label>Type
-              <select id="entryType">
-                <option value="income">Income</option>
-                <option value="expense">Expense</option>
-                <option value="investment">Investment</option>
-              </select>
-            </label>
+          <h3>Entries for Month</h3>
+          <div class="lists-3">
+            <div>
+              <h4>Income</h4>
+              <button id="addIncomeEntryBtn" type="button">Add entry</button>
+              <div id="incomeEntryFormHost"></div>
+              <ul id="incomeList"></ul>
+            </div>
+            <div>
+              <h4>Expenses</h4>
+              <button id="addExpenseEntryBtn" type="button">Add entry</button>
+              <div id="expenseEntryFormHost"></div>
+              <ul id="expenseList"></ul>
+            </div>
+            <div>
+              <h4>Investments</h4>
+              <button id="addInvestmentEntryBtn" type="button">Add entry</button>
+              <div id="investmentEntryFormHost"></div>
+              <ul id="investmentList"></ul>
+            </div>
+          </div>
+          <form id="entryForm" class="stack" hidden>
+            <input id="entryType" type="hidden" value="income" />
             <label>Name
               <input id="entryName" required placeholder="e.g. Salary" />
             </label>
             <label>Amount
               <input id="entryAmount" type="number" step="0.01" required />
             </label>
-            <label id="entryCategoryWrap" hidden>Expense category
+            <label id="entryCategoryWrap" hidden>Category
               <input id="entryCategory" placeholder="e.g. Housing" />
             </label>
             <label id="entryPassiveWrap" class="inline" hidden>
@@ -97,26 +111,11 @@
             <label class="inline">
               <input id="entryPeriodic" type="checkbox" /> Periodical
             </label>
-            <button type="submit">Save entry</button>
+            <div class="row-actions">
+              <button id="entryCancelBtn" type="button">Cancel</button>
+              <button type="submit">Save entry</button>
+            </div>
           </form>
-        </article>
-
-        <article class="card">
-          <h3>Entries for Month</h3>
-          <div class="lists-3">
-            <div>
-              <h4>Income</h4>
-              <ul id="incomeList"></ul>
-            </div>
-            <div>
-              <h4>Expenses</h4>
-              <ul id="expenseList"></ul>
-            </div>
-            <div>
-              <h4>Investments</h4>
-              <ul id="investmentList"></ul>
-            </div>
-          </div>
         </article>
       </section>
 

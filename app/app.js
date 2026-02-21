@@ -127,6 +127,13 @@ const els = {
   entryPassiveWrap: document.getElementById("entryPassiveWrap"),
   entryPassive: document.getElementById("entryPassive"),
   entryPeriodic: document.getElementById("entryPeriodic"),
+  entryCancelBtn: document.getElementById("entryCancelBtn"),
+  addIncomeEntryBtn: document.getElementById("addIncomeEntryBtn"),
+  addExpenseEntryBtn: document.getElementById("addExpenseEntryBtn"),
+  addInvestmentEntryBtn: document.getElementById("addInvestmentEntryBtn"),
+  incomeEntryFormHost: document.getElementById("incomeEntryFormHost"),
+  expenseEntryFormHost: document.getElementById("expenseEntryFormHost"),
+  investmentEntryFormHost: document.getElementById("investmentEntryFormHost"),
   incomeList: document.getElementById("incomeList"),
   expenseList: document.getElementById("expenseList"),
   investmentList: document.getElementById("investmentList"),
@@ -214,9 +221,29 @@ function wireEvents() {
     els.startNextMonthBtn.addEventListener("click", onStartNextMonthClick);
   }
 
+  if (els.entryCancelBtn) {
+    els.entryCancelBtn.addEventListener("click", closeEntryForm);
+  }
+
+  if (els.addIncomeEntryBtn) {
+    els.addIncomeEntryBtn.addEventListener("click", () => {
+      openEntryFormForType("income");
+    });
+  }
+  if (els.addExpenseEntryBtn) {
+    els.addExpenseEntryBtn.addEventListener("click", () => {
+      openEntryFormForType("expense");
+    });
+  }
+  if (els.addInvestmentEntryBtn) {
+    els.addInvestmentEntryBtn.addEventListener("click", () => {
+      openEntryFormForType("investment");
+    });
+  }
+
   els.entryForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const type = els.entryType.value;
+    const type = getEntryType();
     addEntry({
       month: els.monthSelect.value,
       type,
@@ -224,15 +251,22 @@ function wireEvents() {
       amount: Number(els.entryAmount.value),
       periodic: els.entryPeriodic.checked,
       isPassive: type === "income" ? Boolean(els.entryPassive && els.entryPassive.checked) : false,
-      category: type === "expense" ? normalizeExpenseCategory(els.entryCategory && els.entryCategory.value) : ""
+      category: ["income", "expense", "investment"].includes(type) ? normalizeExpenseCategory(els.entryCategory && els.entryCategory.value) : ""
     });
     els.entryForm.reset();
+    if (els.entryType) {
+      els.entryType.value = type;
+    }
     onEntryTypeChange();
+    closeEntryForm();
     render();
   });
 
-  els.entryType.addEventListener("change", onEntryTypeChange);
+  if (els.entryType && els.entryType.tagName === "SELECT") {
+    els.entryType.addEventListener("change", onEntryTypeChange);
+  }
   onEntryTypeChange();
+  closeEntryForm();
 
   els.assetForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -661,6 +695,10 @@ function onTabClick(event) {
     return;
   }
 
+  if (nextTab === "entries") {
+    closeEntryForm();
+  }
+
   if (nextTab === "goals") {
     scrollGoalsToCurrentMonth();
   }
@@ -1063,7 +1101,7 @@ function renderEntryList(listEl, month, type, items) {
     const passiveBadge = type === "income" && item.isPassive
       ? '<small class="item-badge passive-badge">PASSIVE</small>'
       : "";
-    const categoryLine = type === "expense" && normalizeExpenseCategory(item.category)
+    const categoryLine = ["income", "expense", "investment"].includes(type) && normalizeExpenseCategory(item.category)
       ? `<small class="item-category-line">${escapeHtml(normalizeExpenseCategory(item.category))}</small>`
       : "";
     const autoText = item.carriedFrom ? `<small class="item-auto-line">(auto from ${item.carriedFrom})</small>` : "";
@@ -1185,12 +1223,13 @@ function getExpenseCategoryTotals(expenseItems) {
 }
 
 function onEntryTypeChange() {
-  const isExpense = els.entryType && els.entryType.value === "expense";
-  const isIncome = els.entryType && els.entryType.value === "income";
+  const currentType = getEntryType();
+  const needsCategory = currentType === "income" || currentType === "expense" || currentType === "investment";
+  const isIncome = currentType === "income";
   if (els.entryCategoryWrap) {
-    els.entryCategoryWrap.hidden = !isExpense;
+    els.entryCategoryWrap.hidden = !needsCategory;
   }
-  if (!isExpense && els.entryCategory) {
+  if (!needsCategory && els.entryCategory) {
     els.entryCategory.value = "";
   }
   if (els.entryPassiveWrap) {
@@ -1202,6 +1241,65 @@ function onEntryTypeChange() {
       els.entryPassive.checked = false;
     }
   }
+}
+
+function getEntryType() {
+  const value = els.entryType && typeof els.entryType.value === "string"
+    ? els.entryType.value
+    : "income";
+  return ["income", "expense", "investment"].includes(value) ? value : "income";
+}
+
+function openEntryFormForType(type) {
+  if (!els.entryForm) return;
+  const normalizedType = ["income", "expense", "investment"].includes(type) ? type : "income";
+  if (els.entryType) {
+    els.entryType.value = normalizedType;
+  }
+  const host = getEntryFormHost(normalizedType);
+  if (host) {
+    host.appendChild(els.entryForm);
+  }
+  els.entryForm.hidden = false;
+  if (els.addIncomeEntryBtn) {
+    els.addIncomeEntryBtn.hidden = normalizedType === "income";
+  }
+  if (els.addExpenseEntryBtn) {
+    els.addExpenseEntryBtn.hidden = normalizedType === "expense";
+  }
+  if (els.addInvestmentEntryBtn) {
+    els.addInvestmentEntryBtn.hidden = normalizedType === "investment";
+  }
+  onEntryTypeChange();
+  if (els.entryName) {
+    els.entryName.focus();
+  }
+}
+
+function closeEntryForm() {
+  if (!els.entryForm) return;
+  els.entryForm.hidden = true;
+  els.entryForm.reset();
+  if (els.entryType) {
+    els.entryType.value = "income";
+  }
+  onEntryTypeChange();
+  if (els.addIncomeEntryBtn) {
+    els.addIncomeEntryBtn.hidden = false;
+  }
+  if (els.addExpenseEntryBtn) {
+    els.addExpenseEntryBtn.hidden = false;
+  }
+  if (els.addInvestmentEntryBtn) {
+    els.addInvestmentEntryBtn.hidden = false;
+  }
+}
+
+function getEntryFormHost(type) {
+  if (type === "income") return els.incomeEntryFormHost;
+  if (type === "expense") return els.expenseEntryFormHost;
+  if (type === "investment") return els.investmentEntryFormHost;
+  return els.incomeEntryFormHost;
 }
 
 function ensureCurrencySettings() {
@@ -1615,10 +1713,10 @@ async function editEntry(month, type, id) {
     { key: "periodic", label: "Periodical", type: "checkbox", value: Boolean(item.periodic) }
   ];
 
-  if (type === "expense") {
+  if (["income", "expense", "investment"].includes(type)) {
     fields.push({
       key: "category",
-      label: "Expense category",
+      label: "Category",
       type: "text",
       value: normalizeExpenseCategory(item.category)
     });
@@ -1646,7 +1744,7 @@ async function editEntry(month, type, id) {
   item.name = name;
   item.amount = amount;
   item.periodic = Boolean(edited.periodic);
-  if (type === "expense") {
+  if (["income", "expense", "investment"].includes(type)) {
     const category = normalizeExpenseCategory(edited.category);
     if (category) item.category = category;
     else delete item.category;
