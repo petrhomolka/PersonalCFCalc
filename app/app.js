@@ -653,7 +653,34 @@ function onTabClick(event) {
 
   if (tab.dataset.tab === "dashboard") {
     render();
+    return;
   }
+
+  if (tab.dataset.tab === "goals") {
+    scrollGoalsToCurrentMonth();
+  }
+}
+
+function scrollGoalsToCurrentMonth() {
+  const prefersReducedMotion = typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    : false;
+
+  const scrollNow = () => {
+    if (!els.goalTableBody) return;
+    const currentMonthRow = els.goalTableBody.querySelector("tr.is-current-month");
+    if (!currentMonthRow) return;
+    currentMonthRow.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "center",
+      inline: "nearest"
+    });
+  };
+
+  requestAnimationFrame(() => {
+    scrollNow();
+    requestAnimationFrame(scrollNow);
+  });
 }
 
 function addEntry({ month, type, name, amount, periodic, category, isPassive }) {
